@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">WearWise</string>
+    <string name="tagline">Automated Haute Intelligence</string>
+    <string name="nav_outfits">Outfits</string>
+    <string name="nav_closet">Closet</string>
+    <string name="nav_try_on">Avatar</string>
+    <string name="nav_planner">Planner</string>
+    <string name="nav_profile">Profile</string>
+</resources>

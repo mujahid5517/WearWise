@@ -1,0 +1,6 @@
+{
+  "name": "WearWise",
+  "description": "AI-powered personal fashion consultant, digital wardrobe organizer, and outfit planner",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
