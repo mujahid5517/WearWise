@@ -8,7 +8,6 @@ val DarkNavyBg = Color(0xFF0C0F17)
 val CardElevated = Color(0xFF131724)
 val CardBorder = Color(0xFF22283A)
 val CardSelected = Color(0xFF1F253C)
-
 val RoyalElectricViolet = Color(0xFF5E5BF7)
 val RoyalElectricVioletBright = Color(0xFF706EFA)
 val RoyalVioletDark = Color(0xFF4338CA)
