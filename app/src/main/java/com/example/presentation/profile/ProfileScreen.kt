@@ -451,7 +451,7 @@ fun ProfileScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             // Neural Calibration Summary
-            Text("NEURAL CALIBRATION PROFILE", fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, color = CoutureAmber)
+            Text("CALIBRATION PROFILE", fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, color = CoutureAmber)
             Spacer(modifier = Modifier.height(8.dp))
 
             WearWiseCard(modifier = Modifier.fillMaxWidth()) {

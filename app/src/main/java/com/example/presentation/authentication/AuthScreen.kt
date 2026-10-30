@@ -367,7 +367,7 @@ fun CreateAccountScreen(
                 color = RoyalElectricViolet
             )
             Text(
-                text = "NEURAL PERSONA PROFILE",
+                text = "PERSONA PROFILE",
                 fontSize = 10.sp,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 1.sp,
@@ -496,7 +496,7 @@ fun CreateAccountScreen(
         OutlinedTextField(
             value = firstName,
             onValueChange = { firstName = it },
-            placeholder = { Text("e.g. Yared", color = TextMuted) },
+            placeholder = { Text("Enter your name", color = TextMuted) },
             leadingIcon = {
                 Icon(Icons.Default.Person, contentDescription = null, tint = RoyalElectricViolet)
             },

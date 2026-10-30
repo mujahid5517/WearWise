@@ -28,12 +28,17 @@ interface OutfitRepository {
     suspend fun getDailyRecommendation(): Outfit
     suspend fun saveOutfit(outfit: Outfit): Long
     suspend fun toggleFavorite(id: Long, isFavorite: Boolean)
+    suspend fun deleteOutfit(id: Long)
     fun getWeeklySchedule(): Flow<List<WeeklyScheduleItem>>
+    suspend fun saveScheduleItem(item: WeeklyScheduleItem): Long
+    suspend fun updateScheduleItem(item: WeeklyScheduleItem)
+    suspend fun deleteScheduleItem(id: Long)
     suspend fun regenerateWeeklySchedule()
 }
 
 interface TryOnRepository {
     fun getAllTryOnPreviews(): Flow<List<TryOnPreview>>
+    suspend fun deleteTryOnPreview(id: Long)
     suspend fun simulateTryOn(
         outfitId: Long,
         fitType: String,

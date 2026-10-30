@@ -18,6 +18,7 @@ import com.example.data.remote.GeminiImageConfig
 import com.example.data.remote.GeminiInlineData
 import com.example.data.remote.GeminiPart
 import com.example.data.local.ApiKeyManager
+import com.example.data.sync.SyncManager
 import com.example.domain.model.TryOnPreview
 import com.example.domain.repository.TryOnRepository
 import com.example.presentation.common.WearWiseDrawables
@@ -32,13 +33,19 @@ import java.io.File
 class TryOnRepositoryImpl(
     private val context: Context,
     private val database: AppDatabase,
-    private val apiKeyManager: ApiKeyManager
+    private val apiKeyManager: ApiKeyManager,
+    private val syncManager: SyncManager
 ) : TryOnRepository {
 
     override fun getAllTryOnPreviews(): Flow<List<TryOnPreview>> {
         return database.tryOnPreviewDao().getAllTryOnPreviews().map { list ->
             list.map { it.toDomain() }
         }
+    }
+
+    override suspend fun deleteTryOnPreview(id: Long) {
+        database.tryOnPreviewDao().deleteTryOnPreviewById(id)
+        syncManager.enqueue("DELETE", "tryon", id)
     }
 
     override suspend fun simulateTryOn(
@@ -141,6 +148,7 @@ class TryOnRepositoryImpl(
         )
 
         val id = database.tryOnPreviewDao().insertTryOnPreview(previewEntity)
+        syncManager.enqueue("CREATE", "tryon", id)
         previewEntity.copy(id = id).toDomain()
     }
 

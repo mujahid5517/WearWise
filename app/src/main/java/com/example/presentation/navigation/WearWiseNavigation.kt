@@ -1,11 +1,13 @@
 package com.example.presentation.navigation
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -18,6 +20,7 @@ import androidx.navigation.compose.rememberNavController
 import com.example.di.AppContainer
 import com.example.presentation.authentication.CreateAccountScreen
 import com.example.presentation.authentication.WelcomeScreen
+import com.example.presentation.common.OfflineStatusBar
 import com.example.presentation.common.WearWiseBottomBar
 import com.example.presentation.home.HomeScreen
 import com.example.presentation.home.HomeViewModel
@@ -49,6 +52,11 @@ fun WearWiseApp(container: AppContainer) {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route ?: Screen.Outfits.route
 
+    // Observe language, connectivity, and sync state
+    val currentLanguage by container.languageManager.currentLanguage.collectAsState()
+    val isOnline by container.connectivityMonitor.isOnline.collectAsState()
+    val syncState by container.syncManager.syncState.collectAsState()
+
     val mainDestinations = listOf(
         Screen.Outfits.route,
         Screen.Closet.route,
@@ -75,8 +83,12 @@ fun WearWiseApp(container: AppContainer) {
         ProfileViewModel(container.userProfileUseCase, container.apiKeyManager)
     }
 
-    Scaffold(
-        containerColor = DarkNavyBg,
+    androidx.compose.runtime.CompositionLocalProvider(
+        com.example.data.local.LocalAppLanguage provides currentLanguage,
+        com.example.data.local.LocalLanguageManager provides container.languageManager
+    ) {
+        Scaffold(
+            containerColor = DarkNavyBg,
         bottomBar = {
             if (shouldShowBottomBar) {
                 Box(modifier = Modifier.navigationBarsPadding()) {
@@ -96,91 +108,105 @@ fun WearWiseApp(container: AppContainer) {
             }
         }
     ) { innerPadding ->
-        NavHost(
-            navController = navController,
-            startDestination = Screen.Outfits.route,
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            composable(Screen.Welcome.route) {
-                WelcomeScreen(
-                    onNavigateToCreateAccount = {
-                        navController.navigate(Screen.CreateAccount.route)
-                    },
-                    onNavigateToSignIn = {
-                        navController.navigate(Screen.Outfits.route) {
-                            popUpTo(Screen.Welcome.route) { inclusive = true }
+            // Connectivity / sync status indicator — shown on all main screens
+            if (currentRoute in mainDestinations) {
+                OfflineStatusBar(
+                    isOnline = isOnline,
+                    syncState = syncState
+                )
+            }
+
+            NavHost(
+                navController = navController,
+                startDestination = Screen.Outfits.route,
+                modifier = Modifier.fillMaxSize()
+            ) {
+                composable(Screen.Welcome.route) {
+                    WelcomeScreen(
+                        onNavigateToCreateAccount = {
+                            navController.navigate(Screen.CreateAccount.route)
+                        },
+                        onNavigateToSignIn = {
+                            navController.navigate(Screen.Outfits.route) {
+                                popUpTo(Screen.Welcome.route) { inclusive = true }
+                            }
                         }
-                    }
-                )
-            }
+                    )
+                }
 
-            composable(Screen.CreateAccount.route) {
-                CreateAccountScreen(
-                    onContinue = {
-                        navController.navigate(Screen.Onboarding.route)
-                    },
-                    onBack = { navController.popBackStack() },
-                    onSignIn = {
-                        navController.navigate(Screen.Outfits.route) {
-                            popUpTo(Screen.Welcome.route) { inclusive = true }
+                composable(Screen.CreateAccount.route) {
+                    CreateAccountScreen(
+                        onContinue = {
+                            navController.navigate(Screen.Onboarding.route)
+                        },
+                        onBack = { navController.popBackStack() },
+                        onSignIn = {
+                            navController.navigate(Screen.Outfits.route) {
+                                popUpTo(Screen.Welcome.route) { inclusive = true }
+                            }
                         }
-                    }
-                )
-            }
+                    )
+                }
 
-            composable(Screen.Onboarding.route) {
-                OnboardingScreen(
-                    onComplete = {
-                        navController.navigate(Screen.Outfits.route) {
-                            popUpTo(Screen.Onboarding.route) { inclusive = true }
+                composable(Screen.Onboarding.route) {
+                    OnboardingScreen(
+                        onComplete = {
+                            navController.navigate(Screen.Outfits.route) {
+                                popUpTo(Screen.Onboarding.route) { inclusive = true }
+                            }
                         }
-                    }
-                )
-            }
+                    )
+                }
 
-            composable(Screen.Outfits.route) {
-                HomeScreen(
-                    viewModel = homeViewModel,
-                    onNavigateToCloset = { navController.navigate(Screen.Closet.route) },
-                    onNavigateToAvatar = { navController.navigate(Screen.Avatar.route) },
-                    onNavigateToPlanner = { navController.navigate(Screen.Planner.route) },
-                    onNavigateToProfile = { navController.navigate(Screen.Profile.route) }
-                )
-            }
+                composable(Screen.Outfits.route) {
+                    HomeScreen(
+                        viewModel = homeViewModel,
+                        onNavigateToCloset = { navController.navigate(Screen.Closet.route) },
+                        onNavigateToAvatar = { navController.navigate(Screen.Avatar.route) },
+                        onNavigateToPlanner = { navController.navigate(Screen.Planner.route) },
+                        onNavigateToProfile = { navController.navigate(Screen.Profile.route) }
+                    )
+                }
 
-            composable(Screen.Closet.route) {
-                WardrobeScreen(
-                    viewModel = wardrobeViewModel,
-                    onNavigateToProfile = { navController.navigate(Screen.Profile.route) }
-                )
-            }
+                composable(Screen.Closet.route) {
+                    WardrobeScreen(
+                        viewModel = wardrobeViewModel,
+                        onNavigateToProfile = { navController.navigate(Screen.Profile.route) }
+                    )
+                }
 
-            composable(Screen.Avatar.route) {
-                TryOnScreen(
-                    viewModel = tryOnViewModel,
-                    onNavigateToProfile = { navController.navigate(Screen.Profile.route) }
-                )
-            }
+                composable(Screen.Avatar.route) {
+                    TryOnScreen(
+                        viewModel = tryOnViewModel,
+                        isOnline = isOnline,
+                        onNavigateToProfile = { navController.navigate(Screen.Profile.route) }
+                    )
+                }
 
-            composable(Screen.Planner.route) {
-                PlannerScreen(
-                    viewModel = plannerViewModel,
-                    onNavigateToProfile = { navController.navigate(Screen.Profile.route) }
-                )
-            }
+                composable(Screen.Planner.route) {
+                    PlannerScreen(
+                        viewModel = plannerViewModel,
+                        onNavigateToProfile = { navController.navigate(Screen.Profile.route) }
+                    )
+                }
 
-            composable(Screen.Profile.route) {
-                ProfileScreen(
-                    viewModel = profileViewModel,
-                    onNavigateBack = { navController.popBackStack() },
-                    onSignOut = {
-                        navController.navigate(Screen.Welcome.route) {
-                            popUpTo(0) { inclusive = true }
+                composable(Screen.Profile.route) {
+                    ProfileScreen(
+                        viewModel = profileViewModel,
+                        onNavigateBack = { navController.popBackStack() },
+                        onSignOut = {
+                            navController.navigate(Screen.Welcome.route) {
+                                popUpTo(0) { inclusive = true }
+                            }
                         }
-                    }
-                )
+                    )
+                }
+                }
             }
         }
     }

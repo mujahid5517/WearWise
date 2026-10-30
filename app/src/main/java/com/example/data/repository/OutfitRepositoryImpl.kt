@@ -3,6 +3,7 @@ package com.example.data.repository
 import com.example.data.local.AppDatabase
 import com.example.data.mapper.toDomain
 import com.example.data.mapper.toEntity
+import com.example.data.sync.SyncManager
 import com.example.domain.model.ClothingItem
 import com.example.domain.model.Outfit
 import com.example.domain.model.WeeklyScheduleItem
@@ -13,7 +14,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 class OutfitRepositoryImpl(
-    private val database: AppDatabase
+    private val database: AppDatabase,
+    private val syncManager: SyncManager
 ) : OutfitRepository {
 
     override fun getAllOutfits(): Flow<List<Outfit>> {
@@ -65,17 +67,42 @@ class OutfitRepositoryImpl(
     }
 
     override suspend fun saveOutfit(outfit: Outfit): Long {
-        return database.outfitDao().insertOutfit(outfit.toEntity())
+        val id = database.outfitDao().insertOutfit(outfit.toEntity())
+        syncManager.enqueue("CREATE", "outfit", id)
+        return id
     }
 
     override suspend fun toggleFavorite(id: Long, isFavorite: Boolean) {
         database.outfitDao().toggleFavorite(id, isFavorite)
+        syncManager.enqueue("UPDATE", "outfit", id)
+    }
+
+    override suspend fun deleteOutfit(id: Long) {
+        database.outfitDao().deleteOutfitById(id)
+        database.outfitDao().deleteOutfitItemsByOutfitId(id)
+        syncManager.enqueue("DELETE", "outfit", id)
     }
 
     override fun getWeeklySchedule(): Flow<List<WeeklyScheduleItem>> {
         return database.weeklyScheduleDao().getWeeklySchedule().map { list ->
             list.map { it.toDomain() }
         }
+    }
+
+    override suspend fun saveScheduleItem(item: WeeklyScheduleItem): Long {
+        val id = database.weeklyScheduleDao().insertSchedule(item.toEntity())
+        syncManager.enqueue("CREATE", "planner", id)
+        return id
+    }
+
+    override suspend fun updateScheduleItem(item: WeeklyScheduleItem) {
+        database.weeklyScheduleDao().updateSchedule(item.toEntity())
+        syncManager.enqueue("UPDATE", "planner", item.id)
+    }
+
+    override suspend fun deleteScheduleItem(id: Long) {
+        database.weeklyScheduleDao().deleteScheduleById(id)
+        syncManager.enqueue("DELETE", "planner", id)
     }
 
     override suspend fun regenerateWeeklySchedule() {
@@ -88,5 +115,7 @@ class OutfitRepositoryImpl(
             }
         }
         database.weeklyScheduleDao().insertAll(updated)
+        // Enqueue updates for all schedule items
+        updated.forEach { syncManager.enqueue("UPDATE", "planner", it.id) }
     }
 }

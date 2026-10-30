@@ -42,6 +42,8 @@ class ExecuteTryOnUseCase(
 ) {
     fun getHistory(): Flow<List<TryOnPreview>> = tryOnRepository.getAllTryOnPreviews()
 
+    suspend fun deleteHistoryEntry(id: Long) = tryOnRepository.deleteTryOnPreview(id)
+
     suspend fun execute(
         outfitId: Long,
         fitType: String,
@@ -60,6 +62,11 @@ class WeeklyPlannerUseCase(
     fun getSchedule(): Flow<List<WeeklyScheduleItem>> = outfitRepository.getWeeklySchedule()
 
     suspend fun regenerateSchedule() = outfitRepository.regenerateWeeklySchedule()
+
+    suspend fun updateScheduleItem(item: WeeklyScheduleItem) =
+        outfitRepository.updateScheduleItem(item)
+
+    suspend fun deleteScheduleItem(id: Long) = outfitRepository.deleteScheduleItem(id)
 }
 
 class UserProfileUseCase(

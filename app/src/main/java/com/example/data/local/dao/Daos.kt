@@ -72,6 +72,12 @@ interface OutfitDao {
     @Query("UPDATE outfits SET isFavorite = :isFavorite WHERE id = :id")
     suspend fun toggleFavorite(id: Long, isFavorite: Boolean)
 
+    @Query("DELETE FROM outfits WHERE id = :id")
+    suspend fun deleteOutfitById(id: Long)
+
+    @Query("DELETE FROM outfit_items WHERE outfitId = :outfitId")
+    suspend fun deleteOutfitItemsByOutfitId(outfitId: Long)
+
     @Query("SELECT COUNT(*) FROM outfits")
     suspend fun countOutfits(): Int
 }
@@ -86,6 +92,9 @@ interface TryOnPreviewDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertTryOnPreview(preview: TryOnPreviewEntity): Long
+
+    @Query("DELETE FROM try_on_previews WHERE id = :id")
+    suspend fun deleteTryOnPreviewById(id: Long)
 }
 
 @Dao
@@ -93,11 +102,20 @@ interface WeeklyScheduleDao {
     @Query("SELECT * FROM weekly_schedules ORDER BY id ASC")
     fun getWeeklySchedule(): Flow<List<WeeklyScheduleEntity>>
 
+    @Query("SELECT * FROM weekly_schedules WHERE id = :id LIMIT 1")
+    suspend fun getScheduleById(id: Long): WeeklyScheduleEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(schedules: List<WeeklyScheduleEntity>)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertSchedule(schedule: WeeklyScheduleEntity): Long
+
     @Update
     suspend fun updateSchedule(schedule: WeeklyScheduleEntity)
+
+    @Query("DELETE FROM weekly_schedules WHERE id = :id")
+    suspend fun deleteScheduleById(id: Long)
 
     @Query("SELECT COUNT(*) FROM weekly_schedules")
     suspend fun countSchedules(): Int

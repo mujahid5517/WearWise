@@ -251,7 +251,7 @@ fun HomeScreen(
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = "NEURAL STYLIST ACTIVE",
+                            text = "AI STYLIST ACTIVE",
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
                             letterSpacing = 1.sp,

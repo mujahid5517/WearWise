@@ -8,6 +8,41 @@ plugins {
   alias(libs.plugins.google.services)
 }
 
+// Ensure debug.keystore exists before Android configuration
+val debugKeystoreFile = File(rootDir, "debug.keystore")
+if (!debugKeystoreFile.exists()) {
+    val userAndroidDir = File(System.getProperty("user.home"), ".android")
+    val defaultDebugKeystore = File(userAndroidDir, "debug.keystore")
+    if (defaultDebugKeystore.exists()) {
+        defaultDebugKeystore.copyTo(debugKeystoreFile, overwrite = true)
+    } else {
+        userAndroidDir.mkdirs()
+        try {
+            val javaHome = System.getProperty("java.home")
+            val keytoolExe = if (org.gradle.internal.os.OperatingSystem.current().isWindows) "bin/keytool.exe" else "bin/keytool"
+            val keytoolPath = File(javaHome, keytoolExe)
+            val executable = if (keytoolPath.exists()) keytoolPath.absolutePath else "keytool"
+            
+            val process = ProcessBuilder(
+                executable,
+                "-genkey",
+                "-v",
+                "-keystore", debugKeystoreFile.absolutePath,
+                "-storepass", "android",
+                "-alias", "androiddebugkey",
+                "-keypass", "android",
+                "-keyalg", "RSA",
+                "-keysize", "2048",
+                "-validity", "10000",
+                "-dname", "CN=Android Debug,O=Android,C=US"
+            ).redirectErrorStream(true).start()
+            process.waitFor()
+        } catch (_: Exception) {
+            // ignore
+        }
+    }
+}
+
 android {
   namespace = "com.example"
   compileSdk { version = release(36) { minorApiLevel = 1 } }
@@ -108,12 +143,10 @@ dependencies {
   implementation(libs.coil.compose)
   implementation(libs.converter.moshi)
   implementation(libs.firebase.ai)
-  // Uncomment to use Firestore:
-  // implementation(libs.firebase.firestore)
+  implementation(libs.firebase.firestore)
 
-  // Uncomment ALL FOUR of the following dependencies together to use Firebase Auth and Google
-  // Sign-In via Credential Manager:
-  // implementation(libs.firebase.auth)
+  // Firebase Auth for authenticated Firestore read/write access:
+  implementation(libs.firebase.auth)
   // implementation(libs.androidx.credentials)
   // implementation(libs.androidx.credentials.play.services)
   // implementation(libs.googleid)

@@ -39,7 +39,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import com.example.data.local.AppLanguage
+import com.example.data.local.LocalLanguageManager
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -75,13 +78,18 @@ import com.example.ui.theme.TextSecondary
 
 @Composable
 fun WearWiseTopBar(
-    title: String = "WEARWISE",
-    subtitle: String? = "AI COUTURE",
+    title: String? = null,
+    subtitle: String? = null,
     showNotification: Boolean = true,
     userAvatarRes: Int? = WearWiseDrawables.UserAvatar,
     onAvatarClick: () -> Unit = {},
     onNotificationClick: () -> Unit = {}
 ) {
+    val languageManager = LocalLanguageManager.current
+    val currentLang = languageManager?.currentLanguage?.collectAsState()?.value ?: AppLanguage.ENGLISH
+    val displayTitle = title ?: languageManager?.getString("app_title", currentLang) ?: "WEARWISE"
+    val displaySubtitle = subtitle ?: languageManager?.getString("app_subtitle", currentLang) ?: "AI COUTURE"
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -93,15 +101,15 @@ fun WearWiseTopBar(
     ) {
         Column {
             Text(
-                text = title,
+                text = displayTitle,
                 fontSize = 18.sp,
                 fontWeight = FontWeight.ExtraBold,
                 letterSpacing = 3.sp,
                 color = TextPrimary
             )
-            if (subtitle != null) {
+            if (displaySubtitle.isNotEmpty()) {
                 Text(
-                    text = subtitle,
+                    text = displaySubtitle,
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 1.5.sp,
@@ -111,6 +119,27 @@ fun WearWiseTopBar(
         }
 
         Row(verticalAlignment = Alignment.CenterVertically) {
+            if (languageManager != null) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(CardElevated)
+                        .border(1.dp, RoyalElectricViolet.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                        .clickable { languageManager.toggleLanguage() }
+                        .padding(horizontal = 10.dp, vertical = 5.dp)
+                        .testTag("language_toggle_btn"),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = currentLang.nativeName,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = CoutureAmber
+                    )
+                }
+                Spacer(modifier = Modifier.width(10.dp))
+            }
+
             if (showNotification) {
                 Box(
                     modifier = Modifier
@@ -151,12 +180,15 @@ fun WearWiseBottomBar(
     currentRoute: String,
     onNavigate: (String) -> Unit
 ) {
+    val languageManager = LocalLanguageManager.current
+    val currentLang = languageManager?.currentLanguage?.collectAsState()?.value ?: AppLanguage.ENGLISH
+
     val items = listOf(
-        NavigationItem("outfits", "Outfits", Icons.Default.AutoAwesome),
-        NavigationItem("closet", "Closet", Icons.Default.Checkroom),
-        NavigationItem("avatar", "Avatar", Icons.Default.Person),
-        NavigationItem("planner", "Planner", Icons.Default.CalendarMonth),
-        NavigationItem("profile", "Profile", Icons.Default.Tune)
+        NavigationItem("outfits", languageManager?.getString("nav_outfits", currentLang) ?: "Outfits", Icons.Default.AutoAwesome),
+        NavigationItem("closet", languageManager?.getString("nav_closet", currentLang) ?: "Closet", Icons.Default.Checkroom),
+        NavigationItem("avatar", languageManager?.getString("nav_avatar", currentLang) ?: "Avatar", Icons.Default.Person),
+        NavigationItem("planner", languageManager?.getString("nav_planner", currentLang) ?: "Planner", Icons.Default.CalendarMonth),
+        NavigationItem("profile", languageManager?.getString("nav_profile", currentLang) ?: "Profile", Icons.Default.Tune)
     )
 
     Surface(

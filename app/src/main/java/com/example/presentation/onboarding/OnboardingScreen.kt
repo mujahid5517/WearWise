@@ -549,7 +549,7 @@ private fun Step2Lifestyle(
                 .background(Color(0xFF161A2B))
                 .padding(horizontal = 10.dp, vertical = 4.dp)
         ) {
-            Text("• CONTEXT ENGINE", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = RoyalElectricViolet)
+            Text("CONTEXT ENGINE", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = RoyalElectricViolet)
         }
 
         Spacer(modifier = Modifier.height(10.dp))
@@ -643,7 +643,7 @@ private fun Step2Lifestyle(
                 Spacer(modifier = Modifier.width(10.dp))
                 Column {
                     Text("${selectedRoles.size} roles selected", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                    Text("Academic & Research blend detected for Dr. Yared", fontSize = 11.sp, color = TextSecondary)
+                    Text("Academic & Research blend detected", fontSize = 11.sp, color = TextSecondary)
                 }
             }
         }
@@ -669,7 +669,7 @@ private fun Step3DressEnvironment(
                 .background(Color(0xFF161A2B))
                 .padding(horizontal = 10.dp, vertical = 4.dp)
         ) {
-            Text("• CONTEXT INTELLIGENCE", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = RoyalElectricViolet)
+            Text("CONTEXT INTELLIGENCE", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = RoyalElectricViolet)
         }
 
         Spacer(modifier = Modifier.height(10.dp))
@@ -804,7 +804,7 @@ private fun Step4SignatureStyle(
                 .background(Color(0xFF161A2B))
                 .padding(horizontal = 10.dp, vertical = 4.dp)
         ) {
-            Text("• NEURAL STYLE MATRIX", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = RoyalElectricViolet)
+            Text("STYLE MATRIX", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = RoyalElectricViolet)
         }
 
         Spacer(modifier = Modifier.height(10.dp))
@@ -926,7 +926,7 @@ private fun Step5ColorPalette(
                 .background(Color(0xFF161A2B))
                 .padding(horizontal = 10.dp, vertical = 4.dp)
         ) {
-            Text("• COLOR SCIENCE ENGINE", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = RoyalElectricViolet)
+            Text("COLOR PALETTE", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = RoyalElectricViolet)
         }
 
         Spacer(modifier = Modifier.height(10.dp))
@@ -993,7 +993,7 @@ private fun Step5ColorPalette(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text("Yared's Calibrated Spectrum", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                    Text("Calibrated Spectrum", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
                     Text("COHESION: 96%", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = CoutureAmber)
                 }
                 Spacer(modifier = Modifier.height(10.dp))
@@ -1044,7 +1044,7 @@ private fun Step6Occasions(
                 .background(Color(0xFF161A2B))
                 .padding(horizontal = 10.dp, vertical = 4.dp)
         ) {
-            Text("• LIFESTYLE SCHEDULER", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = RoyalElectricViolet)
+            Text("LIFESTYLE SCHEDULER", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = RoyalElectricViolet)
         }
 
         Spacer(modifier = Modifier.height(10.dp))
@@ -1120,7 +1120,7 @@ private fun Step7VirtualTwin(
                 .background(Color(0xFF161A2B))
                 .padding(horizontal = 10.dp, vertical = 4.dp)
         ) {
-            Text("• REAL-TIME 3D CALIBRATION", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = RoyalElectricViolet)
+            Text("3D CALIBRATION", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = RoyalElectricViolet)
         }
 
         Spacer(modifier = Modifier.height(10.dp))

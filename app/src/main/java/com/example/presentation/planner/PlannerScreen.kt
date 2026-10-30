@@ -130,7 +130,7 @@ fun PlannerScreen(
                     .padding(horizontal = 10.dp, vertical = 4.dp)
             ) {
                 Text(
-                    text = "• NEURAL SCHEDULE MATRIX",
+                    text = "SCHEDULE MATRIX",
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Bold,
                     color = RoyalElectricViolet

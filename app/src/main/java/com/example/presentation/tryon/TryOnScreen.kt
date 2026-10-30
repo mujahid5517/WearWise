@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PhotoLibrary
@@ -235,6 +236,12 @@ class TryOnViewModel(
         }
     }
 
+    fun deleteHistoryEntry(id: Long) {
+        viewModelScope.launch {
+            executeTryOnUseCase.deleteHistoryEntry(id)
+        }
+    }
+
     fun runSimulation() {
         viewModelScope.launch {
             _isSimulating.value = true
@@ -271,6 +278,7 @@ class TryOnViewModel(
 @Composable
 fun TryOnScreen(
     viewModel: TryOnViewModel,
+    isOnline: Boolean = true,
     onNavigateToProfile: () -> Unit
 ) {
     val context = LocalContext.current
