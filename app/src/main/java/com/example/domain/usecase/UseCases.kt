@@ -1,7 +1,10 @@
 package com.example.domain.usecase
 
+import android.graphics.Bitmap
+import android.net.Uri
 import com.example.domain.model.ClothingItem
 import com.example.domain.model.Outfit
+import com.example.domain.model.SelectedTryOnGarment
 import com.example.domain.model.TryOnPreview
 import com.example.domain.model.UserProfile
 import com.example.domain.model.WeeklyScheduleItem
@@ -9,6 +12,8 @@ import com.example.domain.repository.OutfitRepository
 import com.example.domain.repository.TryOnRepository
 import com.example.domain.repository.UserRepository
 import com.example.domain.repository.WardrobeRepository
+import com.example.domain.repository.WeatherRepository
+import com.example.domain.model.WeatherLocation
 import kotlinx.coroutines.flow.Flow
 
 class GetDailyRecommendationUseCase(
@@ -17,11 +22,15 @@ class GetDailyRecommendationUseCase(
     suspend operator fun invoke(): Outfit {
         return outfitRepository.getDailyRecommendation()
     }
+
+    suspend fun generateAiRecommendation(): Outfit? = outfitRepository.generateAiRecommendation()
 }
 
 class ManageWardrobeUseCase(
     private val wardrobeRepository: WardrobeRepository
 ) {
+    val syncMessage = wardrobeRepository.syncMessage
+    val uploadProgress = wardrobeRepository.uploadProgress
     fun getAllItems(): Flow<List<ClothingItem>> = wardrobeRepository.getAllClothingItems()
 
     fun getItemsByCategory(category: String): Flow<List<ClothingItem>> =
@@ -35,6 +44,8 @@ class ManageWardrobeUseCase(
 
     suspend fun toggleFavorite(id: Long, isFavorite: Boolean) =
         wardrobeRepository.toggleFavorite(id, isFavorite)
+
+    suspend fun persistClothingImage(uri: String): String = wardrobeRepository.persistClothingImage(uri)
 }
 
 class ExecuteTryOnUseCase(
@@ -44,15 +55,48 @@ class ExecuteTryOnUseCase(
 
     suspend fun deleteHistoryEntry(id: Long) = tryOnRepository.deleteTryOnPreview(id)
 
+    suspend fun setSavedLook(id: Long, saved: Boolean) = tryOnRepository.setSavedLook(id, saved)
+
+    suspend fun persistPersonPhoto(uri: String): String = tryOnRepository.persistPersonPhoto(uri)
+
+    suspend fun persistGarmentPhoto(uri: String): String = tryOnRepository.persistGarmentPhoto(uri)
+
+    suspend fun persistPersonBitmap(bitmap: Bitmap): String = tryOnRepository.persistPersonBitmap(bitmap)
+
+    suspend fun adjustPersonPhoto(path: String, rotationDegrees: Int): String =
+        tryOnRepository.adjustPersonPhoto(path, rotationDegrees)
+
+    suspend fun rotatePersonPhoto(path: String, rotationDegrees: Int): String =
+        tryOnRepository.rotatePersonPhoto(path, rotationDegrees)
+
+    suspend fun cropPersonPhoto(
+        path: String,
+        left: Float,
+        top: Float,
+        right: Float,
+        bottom: Float
+    ): String = tryOnRepository.cropPersonPhoto(path, left, top, right, bottom)
+
+    suspend fun saveGeneratedToGallery(path: String): Uri = tryOnRepository.saveGeneratedToGallery(path)
+
+    fun shareUriForGenerated(path: String): Uri = tryOnRepository.shareUriForGenerated(path)
+
     suspend fun execute(
         outfitId: Long,
         fitType: String,
         pose: String,
         lighting: String,
-        userPhotoUri: String? = null,
-        garmentDescriptions: List<String> = emptyList()
+        userPhotoUri: String,
+        garments: List<SelectedTryOnGarment>
     ): TryOnPreview {
-        return tryOnRepository.simulateTryOn(outfitId, fitType, pose, lighting, userPhotoUri, garmentDescriptions)
+        return tryOnRepository.generateTryOn(
+            outfitId,
+            fitType,
+            pose,
+            lighting,
+            userPhotoUri,
+            garments
+        )
     }
 }
 
@@ -66,7 +110,17 @@ class WeeklyPlannerUseCase(
     suspend fun updateScheduleItem(item: WeeklyScheduleItem) =
         outfitRepository.updateScheduleItem(item)
 
+    suspend fun saveScheduleItem(item: WeeklyScheduleItem): Long = outfitRepository.saveScheduleItem(item)
+
     suspend fun deleteScheduleItem(id: Long) = outfitRepository.deleteScheduleItem(id)
+}
+
+class GetWeatherUseCase(private val weatherRepository: WeatherRepository) {
+    suspend fun refresh(location: WeatherLocation, force: Boolean = false) = weatherRepository.refresh(location, force)
+    suspend fun cached() = weatherRepository.cachedForecast()
+    suspend fun search(query: String) = weatherRepository.searchLocations(query)
+    fun savedLocation() = weatherRepository.getSavedLocation()
+    fun saveLocation(location: WeatherLocation) = weatherRepository.saveLocation(location)
 }
 
 class UserProfileUseCase(

@@ -211,9 +211,9 @@ private fun GarmentPickerRow(
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize()
                     )
-                } else if (!item.imageUri.isNullOrEmpty()) {
+                } else if (!item.imageUri.isNullOrEmpty() || !item.imageUrl.isNullOrEmpty()) {
                     AsyncImage(
-                        model = item.imageUri,
+                        model = item.imageUri ?: item.imageUrl,
                         contentDescription = item.name,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize()

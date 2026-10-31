@@ -44,7 +44,19 @@ data class ClothingItemEntity(
     val imageUri: String?,
     val wearCount: Int,
     val lastWornDate: String?,
-    val createdAt: Long
+    val createdAt: Long,
+    val subcategory: String = "",
+    val brand: String = "",
+    val size: String = "",
+    val occasion: String = "",
+    val description: String = "",
+    val remoteId: String? = null,
+    val imageStoragePath: String? = null,
+    val updatedAt: Long = 0L,
+    val imageUrl: String? = null,
+    val pattern: String = "",
+    val ownerUid: String = "",
+    val catalogAssetName: String? = null
 )
 
 @Entity(tableName = "outfits")
@@ -63,7 +75,8 @@ data class OutfitEntity(
     val occasionFitScore: Int,
     val thermalSyncScore: Int,
     val colorHarmonyScore: Int,
-    val createdAt: Long
+    val createdAt: Long,
+    val ownerUid: String = ""
 )
 
 @Entity(tableName = "outfit_items", primaryKeys = ["outfitId", "clothingId"])
@@ -85,6 +98,8 @@ data class TryOnPreviewEntity(
     val pose: String,
     val lighting: String,
     val activePiecesCount: Int,
+    val isSavedLook: Boolean = false,
+    val garmentSummary: String? = null,
     val createdAt: Long
 )
 
@@ -101,5 +116,24 @@ data class WeeklyScheduleEntity(
     val outfitImageRes: Int?,
     val isToday: Boolean,
     val isWorn: Boolean,
-    val isUnscheduled: Boolean
+    val isUnscheduled: Boolean,
+    val dateIso: String = "",
+    val outfitId: Long? = null,
+    val occasion: String = "Everyday",
+    val reminderEnabled: Boolean = false,
+    val reminderTimeMinutes: Int = 480,
+    val notes: String = "",
+    val wornAtEpochMillis: Long? = null,
+    val ownerUid: String = ""
+)
+
+@Entity(tableName = "wear_history")
+data class WearHistoryEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0L,
+    val outfitId: Long,
+    val outfitTitle: String,
+    val clothingItemIds: String,
+    val wornAtEpochMillis: Long,
+    val occasion: String,
+    val ownerUid: String = ""
 )

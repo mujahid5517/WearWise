@@ -11,6 +11,7 @@ import com.example.data.local.entity.OutfitItemEntity
 import com.example.data.local.entity.TryOnPreviewEntity
 import com.example.data.local.entity.UserProfileEntity
 import com.example.data.local.entity.WeeklyScheduleEntity
+import com.example.data.local.entity.WearHistoryEntity
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -27,11 +28,17 @@ interface ClothingItemDao {
     @Query("SELECT * FROM clothing_items ORDER BY id ASC")
     fun getAllClothingItems(): Flow<List<ClothingItemEntity>>
 
+    @Query("SELECT * FROM clothing_items ORDER BY id ASC")
+    suspend fun getAllClothingItemsSnapshot(): List<ClothingItemEntity>
+
     @Query("SELECT * FROM clothing_items WHERE category = :category ORDER BY id ASC")
     fun getClothingItemsByCategory(category: String): Flow<List<ClothingItemEntity>>
 
     @Query("SELECT * FROM clothing_items WHERE id = :id LIMIT 1")
     suspend fun getClothingItemById(id: Long): ClothingItemEntity?
+
+    @Query("SELECT * FROM clothing_items WHERE remoteId = :remoteId LIMIT 1")
+    suspend fun getClothingItemByRemoteId(remoteId: String): ClothingItemEntity?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertClothingItem(item: ClothingItemEntity): Long
@@ -44,6 +51,9 @@ interface ClothingItemDao {
 
     @Query("UPDATE clothing_items SET isFavorite = :isFavorite WHERE id = :id")
     suspend fun toggleFavorite(id: Long, isFavorite: Boolean)
+
+    @Query("UPDATE clothing_items SET wearCount = wearCount + 1, lastWornDate = :lastWornDate WHERE id = :id")
+    suspend fun markWorn(id: Long, lastWornDate: String)
 
     @Query("SELECT COUNT(*) FROM clothing_items")
     suspend fun countItems(): Int
@@ -95,6 +105,9 @@ interface TryOnPreviewDao {
 
     @Query("DELETE FROM try_on_previews WHERE id = :id")
     suspend fun deleteTryOnPreviewById(id: Long)
+
+    @Query("UPDATE try_on_previews SET isSavedLook = :saved WHERE id = :id")
+    suspend fun setSavedLook(id: Long, saved: Boolean)
 }
 
 @Dao
@@ -102,8 +115,17 @@ interface WeeklyScheduleDao {
     @Query("SELECT * FROM weekly_schedules ORDER BY id ASC")
     fun getWeeklySchedule(): Flow<List<WeeklyScheduleEntity>>
 
+    @Query("SELECT * FROM weekly_schedules WHERE ownerUid = :ownerUid")
+    suspend fun getAllForOwner(ownerUid: String): List<WeeklyScheduleEntity>
+
     @Query("SELECT * FROM weekly_schedules WHERE id = :id LIMIT 1")
     suspend fun getScheduleById(id: Long): WeeklyScheduleEntity?
+
+    @Query("SELECT * FROM weekly_schedules WHERE dateIso = :dateIso AND ownerUid = :ownerUid LIMIT 1")
+    suspend fun getScheduleForDate(dateIso: String, ownerUid: String): WeeklyScheduleEntity?
+
+    @Query("DELETE FROM weekly_schedules WHERE dateIso = :dateIso AND ownerUid = :ownerUid")
+    suspend fun deleteScheduleForDate(dateIso: String, ownerUid: String)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(schedules: List<WeeklyScheduleEntity>)
@@ -119,4 +141,16 @@ interface WeeklyScheduleDao {
 
     @Query("SELECT COUNT(*) FROM weekly_schedules")
     suspend fun countSchedules(): Int
+}
+
+@Dao
+interface WearHistoryDao {
+    @Query("SELECT * FROM wear_history WHERE ownerUid = :ownerUid ORDER BY wornAtEpochMillis DESC")
+    fun observe(ownerUid: String): Flow<List<WearHistoryEntity>>
+
+    @Query("SELECT * FROM wear_history WHERE ownerUid = :ownerUid ORDER BY wornAtEpochMillis DESC LIMIT :limit")
+    suspend fun recent(ownerUid: String, limit: Int = 30): List<WearHistoryEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(history: WearHistoryEntity): Long
 }

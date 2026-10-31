@@ -39,8 +39,33 @@ data class ClothingItem(
     val imageUri: String? = null,
     val wearCount: Int = 0,
     val lastWornDate: String? = null,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val subcategory: String = "",
+    val brand: String = "",
+    val size: String = "",
+    val occasion: String = "",
+    val description: String = "",
+    val remoteId: String? = null,
+    val imageStoragePath: String? = null,
+    val updatedAt: Long = System.currentTimeMillis(),
+    val imageUrl: String? = null,
+    val pattern: String = "",
+    val ownerUid: String = "",
+    val catalogAssetName: String? = null
 )
+
+object WardrobeTaxonomy {
+    val categories = linkedMapOf(
+        "Tops" to listOf("T-shirts", "Shirts", "Sweaters", "Hoodies", "Blouses"),
+        "Bottoms" to listOf("Jeans", "Trousers", "Shorts", "Skirts"),
+        "Outerwear" to listOf("Jackets", "Coats", "Blazers"),
+        "Dresses and One-Piece" to listOf("Dresses", "Jumpsuits"),
+        "Shoes" to listOf("Sneakers", "Formal shoes", "Boots", "Sandals"),
+        "Accessories" to listOf("Watches", "Bags", "Belts", "Hats", "Sunglasses")
+    )
+    val seasons = listOf("All Season", "Spring", "Summer", "Autumn", "Winter")
+    val occasions = listOf("Everyday", "Work", "Formal", "Party", "Sport", "Travel")
+}
 
 data class Outfit(
     val id: Long = 0L,
@@ -58,7 +83,8 @@ data class Outfit(
     val occasionFitScore: Int = 96,
     val thermalSyncScore: Int = 99,
     val colorHarmonyScore: Int = 98,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val ownerUid: String = ""
 )
 
 data class TryOnPreview(
@@ -73,7 +99,20 @@ data class TryOnPreview(
     val pose: String = "Confident Stance",
     val lighting: String = "Warm Daylight", // Warm Daylight, Softbox, Lounge
     val activePiecesCount: Int = 4,
+    val isSavedLook: Boolean = false,
+    val garmentSummary: String? = null,
     val createdAt: Long = System.currentTimeMillis()
+)
+
+data class SelectedTryOnGarment(
+    val slot: String,
+    val name: String,
+    val category: String,
+    val imageRes: Int? = null,
+    val imageUri: String? = null,
+    val clothingItemId: Long? = null,
+    val imageUrl: String? = null,
+    val catalogAssetName: String? = null
 )
 
 data class WeeklyScheduleItem(
@@ -88,5 +127,13 @@ data class WeeklyScheduleItem(
     val outfitImageRes: Int? = null,
     val isToday: Boolean = false,
     val isWorn: Boolean = false,
-    val isUnscheduled: Boolean = false
+    val isUnscheduled: Boolean = false,
+    val dateIso: String = "",
+    val outfitId: Long? = null,
+    val occasion: String = "Everyday",
+    val reminderEnabled: Boolean = false,
+    val reminderTimeMinutes: Int = 480,
+    val notes: String = "",
+    val wornAtEpochMillis: Long? = null,
+    val ownerUid: String = ""
 )

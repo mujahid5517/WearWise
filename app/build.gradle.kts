@@ -144,6 +144,8 @@ dependencies {
   implementation(libs.converter.moshi)
   implementation(libs.firebase.ai)
   implementation(libs.firebase.firestore)
+  implementation(libs.firebase.storage)
+  implementation(libs.play.services.location)
 
   // Firebase Auth for authenticated Firestore read/write access:
   implementation(libs.firebase.auth)

@@ -52,6 +52,7 @@ import coil.compose.AsyncImage
 import com.example.domain.model.ClothingItem
 import com.example.domain.model.Outfit
 import com.example.domain.model.UserProfile
+import com.example.domain.repository.OutfitRepository
 import com.example.domain.usecase.GetDailyRecommendationUseCase
 import com.example.domain.usecase.ManageWardrobeUseCase
 import com.example.domain.usecase.UserProfileUseCase
@@ -82,13 +83,16 @@ data class DecomposedGarmentSlot(
     val spec: String,
     val imageRes: Int? = null,
     val imageUri: String? = null,
-    val category: String
+    val category: String,
+    val imageUrl: String? = null,
+    val wardrobeItemId: Long? = null
 )
 
 class HomeViewModel(
     private val getDailyRecommendationUseCase: GetDailyRecommendationUseCase,
     private val userProfileUseCase: UserProfileUseCase,
-    private val manageWardrobeUseCase: ManageWardrobeUseCase
+    private val manageWardrobeUseCase: ManageWardrobeUseCase,
+    private val outfitRepository: OutfitRepository
 ) : ViewModel() {
 
     private val _outfit = MutableStateFlow<Outfit?>(null)
@@ -96,6 +100,8 @@ class HomeViewModel(
 
     private val _userProfile = MutableStateFlow<UserProfile?>(null)
     val userProfile: StateFlow<UserProfile?> = _userProfile.asStateFlow()
+    private val _generatingAiLook = MutableStateFlow(false)
+    val generatingAiLook: StateFlow<Boolean> = _generatingAiLook.asStateFlow()
 
     val allWardrobeItems: StateFlow<List<ClothingItem>> = manageWardrobeUseCase.getAllItems()
         .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
@@ -152,7 +158,25 @@ class HomeViewModel(
 
     private fun loadData() {
         viewModelScope.launch {
-            _outfit.value = getDailyRecommendationUseCase()
+            manageWardrobeUseCase.getAllItems().collect {
+                val recommendation = getDailyRecommendationUseCase()
+                _outfit.value = recommendation
+                _decomposedSlots.value = recommendation.items.mapIndexed { index, item ->
+                    DecomposedGarmentSlot(
+                        id = "wardrobe_${item.id}_$index",
+                        name = item.name,
+                        role = item.category,
+                        spec = listOf(item.subcategory, item.color, item.season).filter { it.isNotBlank() }.joinToString(" · "),
+                        imageRes = item.imageRes,
+                        imageUri = item.imageUri,
+                        category = item.category,
+                        imageUrl = item.imageUrl,
+                        wardrobeItemId = item.id
+                    )
+                }
+            }
+        }
+        viewModelScope.launch {
             userProfileUseCase.getProfile().collect { profile ->
                 _userProfile.value = profile
             }
@@ -160,20 +184,61 @@ class HomeViewModel(
     }
 
     fun swapSlotItem(slotId: String, newItem: ClothingItem) {
+        val oldItemId = _decomposedSlots.value.firstOrNull { it.id == slotId }?.wardrobeItemId
         val updated = _decomposedSlots.value.map { slot ->
             if (slot.id == slotId) {
                 slot.copy(
                     name = newItem.name,
                     spec = "${newItem.fabric} • ${newItem.color}",
                     imageRes = newItem.imageRes,
-                    imageUri = newItem.imageUri
+                    imageUri = newItem.imageUri,
+                    imageUrl = newItem.imageUrl,
+                    wardrobeItemId = newItem.id
                 )
             } else {
                 slot
             }
         }
         _decomposedSlots.value = updated
-        _outfit.value = _outfit.value?.copy(score = 99)
+        _outfit.value = _outfit.value?.copy(
+            score = 99,
+            items = _outfit.value?.items.orEmpty().filterNot { it.id == oldItemId } + newItem
+        )
+    }
+
+    fun saveRecommendation(onSaved: () -> Unit) {
+        val current = _outfit.value ?: return
+        if (current.items.isEmpty()) return
+        viewModelScope.launch {
+            outfitRepository.saveOutfit(current.copy(id = 0L, title = "Saved: ${current.title}"))
+            onSaved()
+        }
+    }
+
+    fun generateAiRecommendation(onFinished: (Boolean) -> Unit) {
+        if (_generatingAiLook.value) return
+        viewModelScope.launch {
+            _generatingAiLook.value = true
+            try {
+                val suggestion = getDailyRecommendationUseCase.generateAiRecommendation()
+                if (suggestion != null) {
+                    _outfit.value = suggestion
+                    _decomposedSlots.value = suggestion.items.mapIndexed { index, item ->
+                        DecomposedGarmentSlot(
+                            id = "wardrobe_${item.id}_$index", name = item.name, role = item.category,
+                            spec = listOf(item.subcategory, item.color, item.season).filter { it.isNotBlank() }.joinToString(" · "),
+                            imageRes = item.imageRes, imageUri = item.imageUri, imageUrl = item.imageUrl,
+                            category = item.category, wardrobeItemId = item.id
+                        )
+                    }
+                }
+                onFinished(suggestion != null)
+            } catch (_: Exception) {
+                onFinished(false)
+            } finally {
+                _generatingAiLook.value = false
+            }
+        }
     }
 
     fun shuffleRecommendation() {
@@ -207,6 +272,7 @@ fun HomeScreen(
 ) {
     val context = LocalContext.current
     val outfitState by viewModel.outfit.collectAsState()
+    val generatingAiLook by viewModel.generatingAiLook.collectAsState()
     val userProfileState by viewModel.userProfile.collectAsState()
     val decomposedSlots by viewModel.decomposedSlots.collectAsState()
     val allWardrobeItems by viewModel.allWardrobeItems.collectAsState()
@@ -310,6 +376,7 @@ fun HomeScreen(
                 Box(
                     modifier = Modifier
                         .weight(1f)
+                        .clickable { onNavigateToPlanner() }
                         .clip(RoundedCornerShape(12.dp))
                         .background(CardElevated)
                         .border(1.dp, CardBorder, RoundedCornerShape(12.dp))
@@ -318,7 +385,7 @@ fun HomeScreen(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.WbSunny, contentDescription = null, tint = CoutureAmber, modifier = Modifier.size(14.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Sunny 21°C • Campus", fontSize = 11.sp, fontWeight = FontWeight.Medium, color = TextSecondary)
+                        Text("Live weather in Planner", fontSize = 11.sp, fontWeight = FontWeight.Medium, color = TextSecondary)
                     }
                 }
 
@@ -350,6 +417,47 @@ fun HomeScreen(
                     viewModel.shuffleRecommendation()
                 }
             )
+
+            if (allWardrobeItems.isNotEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 10.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(CardElevated)
+                        .border(1.dp, CardBorder, RoundedCornerShape(14.dp))
+                        .clickable(enabled = !generatingAiLook) {
+                            viewModel.generateAiRecommendation { success ->
+                                Toast.makeText(context, if (success) "AI outfit ready" else "Add a Gemini key in Profile to create an AI outfit.", Toast.LENGTH_LONG).show()
+                            }
+                        }
+                        .padding(14.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(if (generatingAiLook) "AI IS STYLING YOUR WARDROBE..." else "ASK AI TO STYLE MY WARDROBE", color = CoutureAmber, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+                Text("When you request an AI look, clothing names and details are sent to Gemini.", color = TextSecondary, fontSize = 10.sp, modifier = Modifier.padding(top = 5.dp))
+            }
+
+            if (outfit.items.isNotEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 10.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(CardElevated)
+                        .border(1.dp, CardBorder, RoundedCornerShape(14.dp))
+                        .clickable {
+                            viewModel.saveRecommendation {
+                                Toast.makeText(context, "Wardrobe look saved", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                        .padding(14.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("SAVE THIS WARDROBE LOOK", color = CoutureAmber, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+            }
 
             Spacer(modifier = Modifier.height(24.dp))
 
@@ -433,9 +541,9 @@ private fun DecomposedGarmentItem(
                             contentScale = ContentScale.Crop,
                             modifier = Modifier.fillMaxSize()
                         )
-                    } else if (!slot.imageUri.isNullOrEmpty()) {
+                    } else if (!slot.imageUri.isNullOrEmpty() || !slot.imageUrl.isNullOrEmpty()) {
                         AsyncImage(
-                            model = slot.imageUri,
+                            model = slot.imageUri ?: slot.imageUrl,
                             contentDescription = slot.name,
                             contentScale = ContentScale.Crop,
                             modifier = Modifier.fillMaxSize()

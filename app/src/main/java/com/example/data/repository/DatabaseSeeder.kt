@@ -4,7 +4,6 @@ import com.example.data.local.AppDatabase
 import com.example.data.local.entity.ClothingItemEntity
 import com.example.data.local.entity.OutfitEntity
 import com.example.data.local.entity.OutfitItemEntity
-import com.example.data.local.entity.TryOnPreviewEntity
 import com.example.data.local.entity.UserProfileEntity
 import com.example.data.local.entity.WeeklyScheduleEntity
 import com.example.presentation.common.WearWiseDrawables
@@ -253,7 +252,7 @@ object DatabaseSeeder {
             style = "Smart Casual",
             score = 98,
             rationale = "Tailored specifically for your lecturer schedule. The 100% Oxford cotton weave ensures all-day breathability during the Faculty Meeting, while the structured navy chinos project relaxed academic authority at the 2:00 PM Colloquium.",
-            weatherTag = "Sunny 21°C • University Campus",
+            weatherTag = "Check live weather in Planner",
             isFavorite = true,
             previewImageRes = WearWiseDrawables.AcademicLook,
             previewImageUri = null,
@@ -265,21 +264,6 @@ object DatabaseSeeder {
         val outfitId = database.outfitDao().insertOutfit(outfit)
         val outfitItems = insertedIds.map { OutfitItemEntity(outfitId = outfitId, clothingId = it) }
         database.outfitDao().insertOutfitItems(outfitItems)
-
-        // 4. Initial Virtual Try-On Preview
-        val preview = TryOnPreviewEntity(
-            outfitId = outfitId,
-            userPhotoPath = null,
-            generatedImagePath = null,
-            previewImageRes = WearWiseDrawables.TryOnModel,
-            harmonyScore = 94,
-            fitType = "Tailored",
-            pose = "Confident Stance",
-            lighting = "Warm Daylight",
-            activePiecesCount = 4,
-            createdAt = System.currentTimeMillis()
-        )
-        database.tryOnPreviewDao().insertTryOnPreview(preview)
 
         // 5. Initial Weekly Planner Schedule (October 14-20)
         val schedules = listOf(

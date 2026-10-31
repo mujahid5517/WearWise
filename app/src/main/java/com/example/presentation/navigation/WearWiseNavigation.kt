@@ -18,7 +18,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.example.di.AppContainer
-import com.example.presentation.authentication.CreateAccountScreen
+import com.example.presentation.authentication.FirebaseAccountScreen
 import com.example.presentation.authentication.WelcomeScreen
 import com.example.presentation.common.OfflineStatusBar
 import com.example.presentation.common.WearWiseBottomBar
@@ -38,6 +38,7 @@ import com.example.ui.theme.DarkNavyBg
 sealed class Screen(val route: String) {
     data object Welcome : Screen("welcome")
     data object CreateAccount : Screen("create_account")
+    data object SignIn : Screen("sign_in")
     data object Onboarding : Screen("onboarding")
     data object Outfits : Screen("outfits")
     data object Closet : Screen("closet")
@@ -68,16 +69,21 @@ fun WearWiseApp(container: AppContainer) {
 
     // ViewModels with constructor injection via container
     val homeViewModel = remember {
-        HomeViewModel(container.getDailyRecommendationUseCase, container.userProfileUseCase, container.manageWardrobeUseCase)
+        HomeViewModel(container.getDailyRecommendationUseCase, container.userProfileUseCase, container.manageWardrobeUseCase, container.outfitRepository)
     }
     val wardrobeViewModel = remember {
-        WardrobeViewModel(container.manageWardrobeUseCase)
+        WardrobeViewModel(container.manageWardrobeUseCase, container.tryOnFileStore, container.apiKeyManager)
     }
     val tryOnViewModel = remember {
-        TryOnViewModel(container.executeTryOnUseCase, container.manageWardrobeUseCase, container.userProfileUseCase)
+        TryOnViewModel(
+            container.executeTryOnUseCase,
+            container.manageWardrobeUseCase,
+            container.userProfileUseCase,
+            container.outfitRepository
+        )
     }
     val plannerViewModel = remember {
-        PlannerViewModel(container.weeklyPlannerUseCase)
+        PlannerViewModel(container.weeklyPlannerUseCase, container.manageWardrobeUseCase, container.outfitRepository, container.getWeatherUseCase, container.appContext)
     }
     val profileViewModel = remember {
         ProfileViewModel(container.userProfileUseCase, container.apiKeyManager)
@@ -123,7 +129,7 @@ fun WearWiseApp(container: AppContainer) {
 
             NavHost(
                 navController = navController,
-                startDestination = Screen.Outfits.route,
+                startDestination = if (container.auth.currentUser == null) Screen.Welcome.route else Screen.Outfits.route,
                 modifier = Modifier.fillMaxSize()
             ) {
                 composable(Screen.Welcome.route) {
@@ -132,24 +138,28 @@ fun WearWiseApp(container: AppContainer) {
                             navController.navigate(Screen.CreateAccount.route)
                         },
                         onNavigateToSignIn = {
-                            navController.navigate(Screen.Outfits.route) {
-                                popUpTo(Screen.Welcome.route) { inclusive = true }
-                            }
+                            navController.navigate(Screen.SignIn.route)
                         }
                     )
                 }
 
                 composable(Screen.CreateAccount.route) {
-                    CreateAccountScreen(
-                        onContinue = {
-                            navController.navigate(Screen.Onboarding.route)
-                        },
-                        onBack = { navController.popBackStack() },
-                        onSignIn = {
-                            navController.navigate(Screen.Outfits.route) {
-                                popUpTo(Screen.Welcome.route) { inclusive = true }
-                            }
-                        }
+                    FirebaseAccountScreen(
+                        auth = container.auth,
+                        signIn = false,
+                        onSuccess = { navController.navigate(Screen.Onboarding.route) { popUpTo(Screen.Welcome.route) } },
+                        onToggleMode = { navController.navigate(Screen.SignIn.route) },
+                        onBack = { navController.popBackStack() }
+                    )
+                }
+
+                composable(Screen.SignIn.route) {
+                    FirebaseAccountScreen(
+                        auth = container.auth,
+                        signIn = true,
+                        onSuccess = { navController.navigate(Screen.Outfits.route) { popUpTo(Screen.Welcome.route) { inclusive = true } } },
+                        onToggleMode = { navController.navigate(Screen.CreateAccount.route) },
+                        onBack = { navController.popBackStack() }
                     )
                 }
 
@@ -176,7 +186,11 @@ fun WearWiseApp(container: AppContainer) {
                 composable(Screen.Closet.route) {
                     WardrobeScreen(
                         viewModel = wardrobeViewModel,
-                        onNavigateToProfile = { navController.navigate(Screen.Profile.route) }
+                        onNavigateToProfile = { navController.navigate(Screen.Profile.route) },
+                        onUseInTryOn = { item ->
+                            tryOnViewModel.addGarment(item)
+                            navController.navigate(Screen.Avatar.route)
+                        }
                     )
                 }
 
@@ -191,7 +205,11 @@ fun WearWiseApp(container: AppContainer) {
                 composable(Screen.Planner.route) {
                     PlannerScreen(
                         viewModel = plannerViewModel,
-                        onNavigateToProfile = { navController.navigate(Screen.Profile.route) }
+                        onNavigateToProfile = { navController.navigate(Screen.Profile.route) },
+                        onUseInTryOn = { outfit ->
+                            tryOnViewModel.applyOutfit(outfit)
+                            navController.navigate(Screen.Avatar.route)
+                        }
                     )
                 }
 
@@ -200,6 +218,7 @@ fun WearWiseApp(container: AppContainer) {
                         viewModel = profileViewModel,
                         onNavigateBack = { navController.popBackStack() },
                         onSignOut = {
+                            container.auth.signOut()
                             navController.navigate(Screen.Welcome.route) {
                                 popUpTo(0) { inclusive = true }
                             }

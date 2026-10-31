@@ -5,11 +5,13 @@ import com.example.data.local.entity.OutfitEntity
 import com.example.data.local.entity.TryOnPreviewEntity
 import com.example.data.local.entity.UserProfileEntity
 import com.example.data.local.entity.WeeklyScheduleEntity
+import com.example.data.local.entity.WearHistoryEntity
 import com.example.domain.model.ClothingItem
 import com.example.domain.model.Outfit
 import com.example.domain.model.TryOnPreview
 import com.example.domain.model.UserProfile
 import com.example.domain.model.WeeklyScheduleItem
+import com.example.domain.model.WearHistory
 
 fun UserProfileEntity.toDomain(): UserProfile {
     return UserProfile(
@@ -78,7 +80,19 @@ fun ClothingItemEntity.toDomain(): ClothingItem {
         imageUri = imageUri,
         wearCount = wearCount,
         lastWornDate = lastWornDate,
-        createdAt = createdAt
+        createdAt = createdAt,
+        subcategory = subcategory,
+        brand = brand,
+        size = size,
+        occasion = occasion,
+        description = description,
+        remoteId = remoteId,
+        imageStoragePath = imageStoragePath,
+        updatedAt = updatedAt,
+        imageUrl = imageUrl,
+        pattern = pattern,
+        ownerUid = ownerUid,
+        catalogAssetName = catalogAssetName
     )
 }
 
@@ -99,7 +113,19 @@ fun ClothingItem.toEntity(): ClothingItemEntity {
         imageUri = imageUri,
         wearCount = wearCount,
         lastWornDate = lastWornDate,
-        createdAt = createdAt
+        createdAt = createdAt,
+        subcategory = subcategory,
+        brand = brand,
+        size = size,
+        occasion = occasion,
+        description = description,
+        remoteId = remoteId,
+        imageStoragePath = imageStoragePath,
+        updatedAt = updatedAt,
+        imageUrl = imageUrl,
+        pattern = pattern,
+        ownerUid = ownerUid,
+        catalogAssetName = catalogAssetName
     )
 }
 
@@ -120,7 +146,8 @@ fun OutfitEntity.toDomain(items: List<ClothingItem> = emptyList()): Outfit {
         occasionFitScore = occasionFitScore,
         thermalSyncScore = thermalSyncScore,
         colorHarmonyScore = colorHarmonyScore,
-        createdAt = createdAt
+        createdAt = createdAt,
+        ownerUid = ownerUid
     )
 }
 
@@ -140,7 +167,8 @@ fun Outfit.toEntity(): OutfitEntity {
         occasionFitScore = occasionFitScore,
         thermalSyncScore = thermalSyncScore,
         colorHarmonyScore = colorHarmonyScore,
-        createdAt = createdAt
+        createdAt = createdAt,
+        ownerUid = ownerUid
     )
 }
 
@@ -157,6 +185,8 @@ fun TryOnPreviewEntity.toDomain(): TryOnPreview {
         pose = pose,
         lighting = lighting,
         activePiecesCount = activePiecesCount,
+        isSavedLook = isSavedLook,
+        garmentSummary = garmentSummary,
         createdAt = createdAt
     )
 }
@@ -174,6 +204,8 @@ fun TryOnPreview.toEntity(): TryOnPreviewEntity {
         pose = pose,
         lighting = lighting,
         activePiecesCount = activePiecesCount,
+        isSavedLook = isSavedLook,
+        garmentSummary = garmentSummary,
         createdAt = createdAt
     )
 }
@@ -191,7 +223,15 @@ fun WeeklyScheduleEntity.toDomain(): WeeklyScheduleItem {
         outfitImageRes = outfitImageRes,
         isToday = isToday,
         isWorn = isWorn,
-        isUnscheduled = isUnscheduled
+        isUnscheduled = isUnscheduled,
+        dateIso = dateIso,
+        outfitId = outfitId,
+        occasion = occasion,
+        reminderEnabled = reminderEnabled,
+        reminderTimeMinutes = reminderTimeMinutes,
+        notes = notes,
+        wornAtEpochMillis = wornAtEpochMillis,
+        ownerUid = ownerUid
     )
 }
 
@@ -208,6 +248,23 @@ fun WeeklyScheduleItem.toEntity(): WeeklyScheduleEntity {
         outfitImageRes = outfitImageRes,
         isToday = isToday,
         isWorn = isWorn,
-        isUnscheduled = isUnscheduled
+        isUnscheduled = isUnscheduled,
+        dateIso = dateIso,
+        outfitId = outfitId,
+        occasion = occasion,
+        reminderEnabled = reminderEnabled,
+        reminderTimeMinutes = reminderTimeMinutes,
+        notes = notes,
+        wornAtEpochMillis = wornAtEpochMillis,
+        ownerUid = ownerUid
     )
 }
+
+fun WearHistoryEntity.toDomain(): WearHistory = WearHistory(
+    id = id,
+    outfitId = outfitId,
+    outfitTitle = outfitTitle,
+    clothingItemIds = clothingItemIds.split(',').mapNotNull { it.toLongOrNull() },
+    wornAtEpochMillis = wornAtEpochMillis,
+    occasion = occasion
+)

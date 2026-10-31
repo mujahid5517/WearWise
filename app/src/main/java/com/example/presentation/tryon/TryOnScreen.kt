@@ -1,17 +1,17 @@
 package com.example.presentation.tryon
 
-import android.content.Context
-import android.graphics.Bitmap
+import android.Manifest
+import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -31,27 +31,27 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.CameraAlt
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudOff
-import androidx.compose.material.icons.filled.LightMode
-import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Crop
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.PhotoLibrary
-import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Rotate90DegreesCcw
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.SwapHoriz
-import androidx.compose.material.icons.filled.ViewInAr
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material.icons.filled.ZoomIn
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -61,23 +61,20 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
 import coil.compose.AsyncImage
+import com.example.data.media.TryOnFileStore
 import com.example.domain.model.ClothingItem
+import com.example.domain.model.SelectedTryOnGarment
 import com.example.domain.model.TryOnPreview
-import com.example.domain.usecase.ExecuteTryOnUseCase
-import com.example.domain.usecase.ManageWardrobeUseCase
-import com.example.presentation.common.GarmentSwapDialog
 import com.example.presentation.common.WearWiseButton
 import com.example.presentation.common.WearWiseCard
 import com.example.presentation.common.WearWiseDrawables
@@ -86,195 +83,20 @@ import com.example.ui.theme.CardBorder
 import com.example.ui.theme.CardElevated
 import com.example.ui.theme.CoutureAmber
 import com.example.ui.theme.CoutureEmerald
+import com.example.ui.theme.CoutureRose
 import com.example.ui.theme.DarkNavyBg
 import com.example.ui.theme.RoyalElectricViolet
 import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.stateIn
+import com.google.accompanist.permissions.ExperimentalPermissionsApi
+import com.google.accompanist.permissions.isGranted
+import com.google.accompanist.permissions.rememberPermissionState
+import com.google.accompanist.permissions.shouldShowRationale
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import java.io.File
-import com.example.domain.usecase.UserProfileUseCase
 
-data class ActiveLayerItem(
-    val slot: String, // BASE, BOTTOM, OUTERWEAR, ACCENTS
-    val title: String,
-    val dotColor: Color,
-    val category: String, // Tops, Bottoms, Outerwear, Accessories
-    val imageRes: Int? = null,
-    val imageUri: String? = null
-)
-
-class TryOnViewModel(
-    private val executeTryOnUseCase: ExecuteTryOnUseCase,
-    private val manageWardrobeUseCase: ManageWardrobeUseCase,
-    private val userProfileUseCase: UserProfileUseCase
-) : ViewModel() {
-
-    private val _isSimulating = MutableStateFlow(false)
-    val isSimulating: StateFlow<Boolean> = _isSimulating.asStateFlow()
-
-    private val _currentPreview = MutableStateFlow<TryOnPreview?>(null)
-    val currentPreview: StateFlow<TryOnPreview?> = _currentPreview.asStateFlow()
-
-    private val _userPhotoUri = MutableStateFlow<String?>(null)
-    val userPhotoUri: StateFlow<String?> = _userPhotoUri.asStateFlow()
-
-    private val _fitType = MutableStateFlow("Tailored")
-    val fitType: StateFlow<String> = _fitType.asStateFlow()
-
-    private val _pose = MutableStateFlow("Confident Stance")
-    val pose: StateFlow<String> = _pose.asStateFlow()
-
-    private val _lighting = MutableStateFlow("Warm Daylight")
-    val lighting: StateFlow<String> = _lighting.asStateFlow()
-
-    private val _statusMessage = MutableStateFlow("Neural Cloth Physics Active • 60 FPS")
-    val statusMessage: StateFlow<String> = _statusMessage.asStateFlow()
-
-    val wardrobeItems: StateFlow<List<ClothingItem>> = manageWardrobeUseCase.getAllItems()
-        .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
-
-    val tryOnHistory: StateFlow<List<TryOnPreview>> = executeTryOnUseCase.getHistory()
-        .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
-
-    private val _activeLayers = MutableStateFlow(
-        listOf(
-            ActiveLayerItem("BASE", "Oxford Shirt", Color(0xFFF8FAFC), "Tops", WearWiseDrawables.ItemOxford),
-            ActiveLayerItem("BOTTOM", "Navy Chinos", Color(0xFF1E293B), "Bottoms", WearWiseDrawables.ItemChinos),
-            ActiveLayerItem("OUTERWEAR", "Olive Blazer", Color(0xFF4D6043), "Outerwear", WearWiseDrawables.ItemBlazer),
-            ActiveLayerItem("ACCENTS", "Loafers & Watch", CoutureAmber, "Accessories", WearWiseDrawables.ItemLoafers)
-        )
-    )
-    val activeLayers: StateFlow<List<ActiveLayerItem>> = _activeLayers.asStateFlow()
-
-    init {
-        _currentPreview.value = TryOnPreview(
-            id = 1L,
-            outfitId = 1L,
-            previewImageRes = WearWiseDrawables.TryOnModel,
-            harmonyScore = 94,
-            fitType = "Tailored",
-            pose = "Confident Stance",
-            lighting = "Warm Daylight",
-            activePiecesCount = 4
-        )
-
-        viewModelScope.launch {
-            userProfileUseCase.getProfile().collect { p ->
-                if (_userPhotoUri.value == null && !p?.profileImage.isNullOrEmpty()) {
-                    _userPhotoUri.value = p?.profileImage
-                }
-            }
-        }
-    }
-
-    fun setFitType(fit: String) {
-        _fitType.value = fit
-        runSimulation()
-    }
-
-    fun setPose(pose: String) {
-        _pose.value = pose
-        runSimulation()
-    }
-
-    fun setLighting(light: String) {
-        _lighting.value = light
-    }
-
-    fun setUserPhoto(uri: String) {
-        _userPhotoUri.value = uri
-        runSimulation()
-    }
-
-    fun setUserBitmap(bitmap: Bitmap, context: Context) {
-        viewModelScope.launch(Dispatchers.IO) {
-            val file = File(context.cacheDir, "user_avatar_${System.currentTimeMillis()}.jpg")
-            val fos = file.outputStream()
-            bitmap.compress(Bitmap.CompressFormat.JPEG, 90, fos)
-            fos.flush()
-            fos.close()
-            _userPhotoUri.value = file.absolutePath
-            runSimulation()
-        }
-    }
-
-    fun clearUserPhoto() {
-        _userPhotoUri.value = null
-        runSimulation()
-    }
-
-    fun swapLayerItem(slotName: String, newItem: ClothingItem) {
-        val updated = _activeLayers.value.map { item ->
-            if (item.slot == slotName) {
-                item.copy(
-                    title = newItem.name,
-                    imageRes = newItem.imageRes,
-                    imageUri = newItem.imageUri
-                )
-            } else {
-                item
-            }
-        }
-        _activeLayers.value = updated
-        runSimulation()
-    }
-
-    fun selectHistoryPreview(preview: TryOnPreview) {
-        _currentPreview.value = preview
-        _fitType.value = preview.fitType
-        _pose.value = preview.pose
-        _lighting.value = preview.lighting
-        if (preview.userPhotoPath != null) {
-            _userPhotoUri.value = preview.userPhotoPath
-        }
-    }
-
-    fun deleteHistoryEntry(id: Long) {
-        viewModelScope.launch {
-            executeTryOnUseCase.deleteHistoryEntry(id)
-        }
-    }
-
-    fun runSimulation() {
-        viewModelScope.launch {
-            _isSimulating.value = true
-            _statusMessage.value = "Calibrating photorealistic drape & fabric tensions..."
-
-            val garmentDescriptions = _activeLayers.value.map {
-                "${it.slot}: ${it.title}"
-            }
-
-            try {
-                val result = executeTryOnUseCase.execute(
-                    outfitId = 1L,
-                    fitType = _fitType.value,
-                    pose = _pose.value,
-                    lighting = _lighting.value,
-                    userPhotoUri = _userPhotoUri.value,
-                    garmentDescriptions = garmentDescriptions
-                )
-                _currentPreview.value = result
-                _statusMessage.value = if (!result.generatedImagePath.isNullOrEmpty()) {
-                    "Gemini AI Virtual Try-On Rendered"
-                } else {
-                    "Neural Cloth Physics Calibrated (99.2% Accuracy)"
-                }
-            } catch (e: Exception) {
-                _statusMessage.value = "Neural Physics Calibrated"
-            } finally {
-                _isSimulating.value = false
-            }
-        }
-    }
-}
-
+@OptIn(ExperimentalPermissionsApi::class)
 @Composable
 fun TryOnScreen(
     viewModel: TryOnViewModel,
@@ -282,46 +104,80 @@ fun TryOnScreen(
     onNavigateToProfile: () -> Unit
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val preview by viewModel.currentPreview.collectAsState()
-    val isSimulating by viewModel.isSimulating.collectAsState()
+    val isGenerating by viewModel.isGenerating.collectAsState()
     val userPhotoUri by viewModel.userPhotoUri.collectAsState()
     val fitType by viewModel.fitType.collectAsState()
     val pose by viewModel.pose.collectAsState()
     val lighting by viewModel.lighting.collectAsState()
     val statusMessage by viewModel.statusMessage.collectAsState()
-    val activeLayers by viewModel.activeLayers.collectAsState()
-    val allWardrobeItems by viewModel.wardrobeItems.collectAsState()
+    val garments by viewModel.garments.collectAsState()
+    val wardrobeItems by viewModel.wardrobeItems.collectAsState()
+    val outfits by viewModel.outfits.collectAsState()
     val historyPreviews by viewModel.tryOnHistory.collectAsState()
+    val errorMessage by viewModel.errorMessage.collectAsState()
+    val photoError by viewModel.photoError.collectAsState()
+    val privacyAccepted by viewModel.privacyAccepted.collectAsState()
 
-    var activeTab by remember { mutableStateOf("Current Outfit") }
-    var activeSwapSlot by remember { mutableStateOf<ActiveLayerItem?>(null) }
+    var activeTab by remember { mutableStateOf("Studio") }
+    var clothingCategory by remember { mutableStateOf("All") }
+    var comparisonMode by remember { mutableStateOf("Slider") }
+    var fullscreenModel by remember { mutableStateOf<Pair<Any, String>?>(null) }
+    var showPrivacyDialog by remember { mutableStateOf(false) }
+    var showCropDialog by remember { mutableStateOf(false) }
+    var pendingCameraUri by remember { mutableStateOf<Uri?>(null) }
+    var garmentUploadCategory by remember { mutableStateOf("Tops") }
+    val colorScheme = MaterialTheme.colorScheme
+    val fileStore = remember { TryOnFileStore(context) }
 
-    // Photo picker launcher (Gallery)
     val photoPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia(),
-        onResult = { uri ->
-            if (uri != null) {
-                viewModel.setUserPhoto(uri.toString())
-                Toast.makeText(context, "Photo loaded for try-on simulation", Toast.LENGTH_SHORT).show()
-            }
-        }
-    )
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri != null) viewModel.importPersonPhoto(uri.toString())
+    }
 
-    // Camera launcher
+    val garmentPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri != null) viewModel.importGarmentPhoto(uri.toString(), garmentUploadCategory)
+    }
+
     val cameraLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.TakePicturePreview(),
-        onResult = { bitmap ->
-            if (bitmap != null) {
-                viewModel.setUserBitmap(bitmap, context)
-                Toast.makeText(context, "Captured photo loaded for try-on simulation", Toast.LENGTH_SHORT).show()
-            }
+        contract = ActivityResultContracts.TakePicture()
+    ) { success ->
+        val uri = pendingCameraUri
+        if (success && uri != null) {
+            viewModel.importPersonPhoto(uri.toString())
         }
-    )
+    }
+
+    fun launchCameraCapture() {
+        val (uri, _) = fileStore.createCameraOutputUri()
+        pendingCameraUri = uri
+        cameraLauncher.launch(uri)
+    }
+
+    val cameraPermission = rememberPermissionState(Manifest.permission.CAMERA) { granted ->
+        if (granted) {
+            launchCameraCapture()
+        } else {
+            viewModel.setPhotoError("Camera permission is required to take a photo. You can still choose an image from the gallery.")
+        }
+    }
+
+    fun launchCamera() {
+        if (cameraPermission.status.isGranted) {
+            launchCameraCapture()
+        } else {
+            cameraPermission.launchPermissionRequest()
+        }
+    }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(DarkNavyBg)
+            .background(colorScheme.background)
             .testTag("tryon_screen")
     ) {
         WearWiseTopBar(
@@ -337,630 +193,721 @@ fun TryOnScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp, vertical = 8.dp)
         ) {
-            // Header
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
+            Text(
+                text = "AI Virtual Try-On",
+                fontSize = 24.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = TextPrimary
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "1. Your photo  2. Clothing  3. Generate  4. Compare",
+                fontSize = 12.sp,
+                color = TextSecondary
+            )
+
+            if (!isOnline) {
+                Spacer(modifier = Modifier.height(10.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color(0x33F43F5E))
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.CloudOff, contentDescription = null, tint = CoutureRose, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Style Avatar\nStudio",
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        lineHeight = 28.sp,
+                        text = "Internet is required to create a new virtual try-on.",
+                        fontSize = 12.sp,
                         color = TextPrimary
                     )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "Real-time photorealistic cloth physics & fit gauge",
-                        fontSize = 12.sp,
-                        color = TextSecondary
-                    )
-                }
-
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(Color(0xFF1B2032))
-                        .padding(horizontal = 10.dp, vertical = 6.dp)
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.ViewInAr,
-                            contentDescription = null,
-                            tint = RoyalElectricViolet,
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = "3D / AR READY",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = RoyalElectricViolet
-                        )
-                    }
                 }
             }
 
             Spacer(modifier = Modifier.height(14.dp))
-
-            // Studio Tabs
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(CardElevated)
-                    .padding(4.dp),
-                horizontalArrangement = Arrangement.SpaceAround
-            ) {
-                listOf("Current Outfit", "Saved Looks", "Favorites").forEach { tab ->
-                    val selected = activeTab == tab
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(if (selected) RoyalElectricViolet else Color.Transparent)
-                            .clickable { activeTab = tab }
-                            .padding(vertical = 8.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = tab,
-                            fontSize = 12.sp,
-                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                            color = if (selected) Color.White else TextSecondary
-                        )
-                    }
-                }
-            }
-
+            StudioTabs(activeTab) { activeTab = it }
             Spacer(modifier = Modifier.height(16.dp))
 
-            if (activeTab == "Current Outfit") {
-                // Main Photorealistic Studio Avatar Window
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(450.dp)
-                        .clip(RoundedCornerShape(24.dp))
-                        .background(CardElevated)
-                        .border(1.dp, CardBorder, RoundedCornerShape(24.dp))
-                ) {
-                    // Dynamic Image Rendering
-                    val generatedPath = preview?.generatedImagePath
-                    val photoPath = userPhotoUri ?: preview?.userPhotoPath
-
-                    when {
-                        !generatedPath.isNullOrEmpty() -> {
-                            AsyncImage(
-                                model = generatedPath,
-                                contentDescription = "Generated Virtual Try-On",
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
-                            )
-                        }
-                        !photoPath.isNullOrEmpty() -> {
-                            AsyncImage(
-                                model = photoPath,
-                                contentDescription = "User Avatar Try-On",
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
-                            )
-                        }
-                        else -> {
-                            Image(
-                                painter = painterResource(id = preview?.previewImageRes ?: WearWiseDrawables.TryOnModel),
-                                contentDescription = "Virtual Try-On Model",
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
-                            )
-                        }
-                    }
-
-                    // Simulation Progress Overlay
-                    if (isSimulating) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(Color(0x99000000)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                CircularProgressIndicator(
-                                    color = RoyalElectricViolet,
-                                    modifier = Modifier.size(44.dp)
-                                )
-                                Spacer(modifier = Modifier.height(12.dp))
-                                Text(
-                                    text = "SYNTHESIZING DRAPE...",
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    letterSpacing = 1.sp,
-                                    color = Color.White
-                                )
-                            }
-                        }
-                    }
-
-                    // Top Action Bar Overlay
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(Color(0xCC0B0D14))
-                                .padding(horizontal = 8.dp, vertical = 4.dp)
-                        ) {
-                            Text(
-                                text = "• $statusMessage",
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = CoutureAmber,
-                                maxLines = 1
-                            )
-                        }
-
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            // Camera Button
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(Color(0xCC0B0D14))
-                                    .clickable { cameraLauncher.launch(null) }
-                                    .padding(horizontal = 8.dp, vertical = 6.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.Default.CameraAlt,
-                                        contentDescription = "Take Photo",
-                                        tint = Color.White,
-                                        modifier = Modifier.size(13.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Camera", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                                }
-                            }
-
-                            // Gallery Button
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(Color(0xCC0B0D14))
-                                    .clickable {
-                                        photoPickerLauncher.launch(
-                                            androidx.activity.result.PickVisualMediaRequest(
-                                                ActivityResultContracts.PickVisualMedia.ImageOnly
-                                            )
-                                        )
-                                    }
-                                    .padding(horizontal = 8.dp, vertical = 6.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.Default.PhotoLibrary,
-                                        contentDescription = "Pick Photo",
-                                        tint = CoutureAmber,
-                                        modifier = Modifier.size(13.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Gallery", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = CoutureAmber)
-                                }
-                            }
-
-                            // Reset to Model if photo active
-                            if (!userPhotoUri.isNullOrEmpty()) {
-                                Box(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(10.dp))
-                                        .background(Color(0xCC0B0D14))
-                                        .clickable { viewModel.clearUserPhoto() }
-                                        .padding(horizontal = 8.dp, vertical = 6.dp)
-                                ) {
-                                    Text("Model", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.LightGray)
-                                }
-                            }
-                        }
-                    }
-
-                    // Interactive Callout Hotspot Badges
-                    val baseLayerName = activeLayers.find { it.slot == "BASE" }?.title ?: "Oxford"
-                    val outerLayerName = activeLayers.find { it.slot == "OUTERWEAR" }?.title ?: "Blazer"
-                    val bottomLayerName = activeLayers.find { it.slot == "BOTTOM" }?.title ?: "Chinos"
-                    val accentName = activeLayers.find { it.slot == "ACCENTS" }?.title ?: "Loafers"
-
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.CenterEnd)
-                            .padding(end = 16.dp, bottom = 60.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(Color(0xDD0B0D14))
-                            .border(1.dp, RoyalElectricViolet.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
-                            .clickable {
-                                activeSwapSlot = activeLayers.find { it.slot == "OUTERWEAR" }
-                            }
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
-                    ) {
-                        Text("TOP: $outerLayerName + $baseLayerName ⇄", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                    }
-
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.CenterStart)
-                            .padding(start = 16.dp, top = 80.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(Color(0xDD0B0D14))
-                            .border(1.dp, CardBorder, RoundedCornerShape(8.dp))
-                            .clickable {
-                                activeSwapSlot = activeLayers.find { it.slot == "BOTTOM" }
-                            }
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
-                    ) {
-                        Text("BOTTOM: $bottomLayerName ⇄", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                    }
-
-                    // Bottom Harmony Score Bar
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.BottomStart)
-                            .fillMaxWidth()
-                            .padding(14.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(Color(0xDD0B0D14))
-                            .padding(horizontal = 12.dp, vertical = 8.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(28.dp)
-                                        .clip(CircleShape)
-                                        .background(RoyalElectricViolet),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text("${preview?.harmonyScore ?: 94}", fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, color = Color.White)
-                                }
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Column {
-                                    Text("HARMONY SCORE", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = TextSecondary)
-                                    Text("Smart Business Casual", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                                }
-                            }
-
-                            Text("• $accentName", fontSize = 11.sp, color = CoutureAmber)
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Garment Layer Stack with Swap Functionality
-                WearWiseCard(modifier = Modifier.fillMaxWidth()) {
-                    Column {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "Garment Layer Stack",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = TextPrimary
-                            )
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .background(Color(0xFF22283A))
-                                    .padding(horizontal = 8.dp, vertical = 3.dp)
-                            ) {
-                                Text(
-                                    text = "TAP ITEM TO SWAP",
-                                    fontSize = 9.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = CoutureAmber
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            activeLayers.forEach { layer ->
-                                ClickableLayerPill(
-                                    layer = layer,
-                                    onClick = { activeSwapSlot = layer }
-                                )
-                            }
-                        }
-                    }
-                }
+            if (activeTab == "Studio") {
+                PhotoStepCard(
+                    userPhotoUri = userPhotoUri,
+                    photoError = photoError,
+                    onCamera = { launchCamera() },
+                    onGallery = {
+                        photoPickerLauncher.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                        )
+                    },
+                    onRotate = { viewModel.rotatePersonPhoto(90) },
+                    onCrop = { showCropDialog = true },
+                    onRemove = { viewModel.clearUserPhoto() },
+                    onPreview = { model -> fullscreenModel = model to "BEFORE — Original Photo" }
+                )
 
                 Spacer(modifier = Modifier.height(14.dp))
-
-                // Simulation Controls (Fit Simulation, Pose, Lighting)
-                WearWiseCard(modifier = Modifier.fillMaxWidth()) {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text("Fit Simulation", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextSecondary)
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            listOf("Relaxed", "Tailored", "Slim").forEach { fit ->
-                                val selected = fitType == fit
-                                Box(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .background(if (selected) RoyalElectricViolet else Color(0xFF1B2032))
-                                        .clickable { viewModel.setFitType(fit) }
-                                        .padding(vertical = 8.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(fit, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                                }
-                            }
-                        }
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(Color(0xFF1B2032))
-                                    .clickable {
-                                        val nextPose = if (pose == "Confident Stance") "Editorial Stride" else "Confident Stance"
-                                        viewModel.setPose(nextPose)
-                                    }
-                                    .padding(10.dp)
-                            ) {
-                                Column {
-                                    Text("POSE", fontSize = 9.sp, color = TextMuted)
-                                    Text(pose, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                                }
-                            }
-
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(Color(0xFF1B2032))
-                                    .clickable {
-                                        val nextLight = if (lighting == "Warm Daylight") "Studio Softbox" else "Warm Daylight"
-                                        viewModel.setLighting(nextLight)
-                                    }
-                                    .padding(10.dp)
-                            ) {
-                                Column {
-                                    Text("LIGHTING", fontSize = 9.sp, color = TextMuted)
-                                    Text(lighting, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = CoutureAmber)
-                                }
-                            }
-                        }
+                ClothingStepCard(
+                    garments = garments,
+                    wardrobeItems = wardrobeItems,
+                    outfits = outfits,
+                    category = clothingCategory,
+                    onCategory = { clothingCategory = it },
+                    onGarment = { viewModel.addGarment(it) },
+                    onOutfit = { viewModel.applyOutfit(it) },
+                    onRemove = { viewModel.removeGarment(it) },
+                    onUpload = { category ->
+                        garmentUploadCategory = category
+                        garmentPickerLauncher.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                        )
                     }
-                }
+                )
 
-                Spacer(modifier = Modifier.height(18.dp))
+                Spacer(modifier = Modifier.height(14.dp))
+                StudioControlsCard(
+                    fitType = fitType,
+                    pose = pose,
+                    lighting = lighting,
+                    onFit = viewModel::setFitType,
+                    onPose = viewModel::setPose,
+                    onLighting = viewModel::setLighting
+                )
 
-                // Simulate Virtual Try-On Button
+                Spacer(modifier = Modifier.height(16.dp))
                 WearWiseButton(
-                    text = if (isSimulating) "CALIBRATING CLOTH PHYSICS..." else "SIMULATE VIRTUAL TRY-ON",
-                    onClick = { viewModel.runSimulation() },
-                    enabled = !isSimulating,
+                    text = if (isGenerating) "AI IS CREATING YOUR OUTFIT..." else "GENERATE VIRTUAL TRY-ON",
+                    onClick = {
+                        if (!privacyAccepted) {
+                            showPrivacyDialog = true
+                        } else {
+                            viewModel.generateTryOn()
+                        }
+                    },
+                    enabled = !isGenerating && isOnline,
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("simulate_try_on_button"),
-                    trailingIcon = if (isSimulating) null else Icons.Default.AutoAwesome
+                    trailingIcon = if (isGenerating) null else Icons.Default.AutoAwesome
                 )
 
-                Spacer(modifier = Modifier.height(10.dp))
+                AnimatedVisibility(visible = isGenerating) {
+                    GenerationProgressCard(
+                        statusMessage = statusMessage,
+                        onCancel = { viewModel.cancelGeneration() }
+                    )
+                }
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Button(
-                        onClick = {
-                            Toast.makeText(context, "Look saved to favorites!", Toast.LENGTH_SHORT).show()
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = CardElevated),
-                        shape = RoundedCornerShape(20.dp),
-                        modifier = Modifier.weight(1f).border(1.dp, CardBorder, RoundedCornerShape(20.dp))
-                    ) {
-                        Icon(Icons.Default.BookmarkBorder, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Save Look", fontSize = 13.sp, color = TextPrimary)
-                    }
-
-                    Button(
-                        onClick = {
-                            Toast.makeText(context, "Sharing Virtual Avatar card...", Toast.LENGTH_SHORT).show()
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = CardElevated),
-                        shape = RoundedCornerShape(20.dp),
-                        modifier = Modifier.weight(1f).border(1.dp, CardBorder, RoundedCornerShape(20.dp))
-                    ) {
-                        Icon(Icons.Default.Share, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Share Look", fontSize = 13.sp, color = TextPrimary)
+                if (!errorMessage.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    ErrorBanner(errorMessage!!) {
+                        viewModel.clearError()
+                        viewModel.generateTryOn()
                     }
                 }
-            } else {
-                // Saved Looks / History Grid
-                Text(
-                    text = "Virtual Try-On Archive",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = TextPrimary
-                )
-                Spacer(modifier = Modifier.height(12.dp))
 
-                if (historyPreviews.isEmpty()) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(200.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "No saved simulations yet.\nTap 'Simulate Virtual Try-On' to generate.",
-                            fontSize = 13.sp,
-                            color = TextSecondary,
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                        )
-                    }
-                } else {
-                    LazyVerticalGrid(
-                        columns = GridCells.Fixed(2),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(460.dp)
-                    ) {
-                        items(historyPreviews, key = { it.id }) { item ->
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(16.dp))
-                                    .background(CardElevated)
-                                    .border(1.dp, CardBorder, RoundedCornerShape(16.dp))
-                                    .clickable {
-                                        viewModel.selectHistoryPreview(item)
-                                        activeTab = "Current Outfit"
-                                        Toast.makeText(context, "Loaded look into Studio", Toast.LENGTH_SHORT).show()
-                                    }
-                                    .padding(8.dp)
-                            ) {
-                                Column {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(150.dp)
-                                            .clip(RoundedCornerShape(12.dp))
-                                            .background(Color(0xFF1B2032))
-                                    ) {
-                                        if (!item.generatedImagePath.isNullOrEmpty()) {
-                                            AsyncImage(
-                                                model = item.generatedImagePath,
-                                                contentDescription = null,
-                                                contentScale = ContentScale.Crop,
-                                                modifier = Modifier.fillMaxSize()
-                                            )
-                                        } else {
-                                            Image(
-                                                painter = painterResource(id = item.previewImageRes ?: WearWiseDrawables.TryOnModel),
-                                                contentDescription = null,
-                                                contentScale = ContentScale.Crop,
-                                                modifier = Modifier.fillMaxSize()
-                                            )
-                                        }
-
-                                        Box(
-                                            modifier = Modifier
-                                                .align(Alignment.TopEnd)
-                                                .padding(6.dp)
-                                                .clip(RoundedCornerShape(6.dp))
-                                                .background(Color(0xCC0B0D14))
-                                                .padding(horizontal = 6.dp, vertical = 2.dp)
-                                        ) {
-                                            Text("${item.harmonyScore}%", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = CoutureAmber)
-                                        }
-                                    }
-
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    Text(
-                                        text = "${item.fitType} Fit • ${item.pose}",
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = TextPrimary,
-                                        maxLines = 1
-                                    )
-                                    Text(
-                                        text = item.lighting,
-                                        fontSize = 10.sp,
-                                        color = TextSecondary
-                                    )
+                val generatedPath = preview?.generatedImagePath
+                val beforePath = userPhotoUri ?: preview?.userPhotoPath
+                if (!generatedPath.isNullOrBlank() && !beforePath.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(18.dp))
+                    ResultCard(
+                        beforePath = beforePath,
+                        afterPath = generatedPath,
+                        preview = preview!!,
+                        comparisonMode = comparisonMode,
+                        onMode = { comparisonMode = it },
+                        onFullscreen = { model, title -> fullscreenModel = model to title },
+                        onSaveLook = { viewModel.toggleSavedLook() },
+                        onDownload = {
+                            scope.launch {
+                                val result = viewModel.saveToGallery()
+                                Toast.makeText(
+                                    context,
+                                    if (result.isSuccess) "Saved to Pictures/WearWise" else (result.exceptionOrNull()?.message ?: "Download failed"),
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        },
+                        onShare = {
+                            val uri = viewModel.shareUriOrNull()
+                            if (uri != null) {
+                                val intent = Intent(Intent.ACTION_SEND).apply {
+                                    type = "image/jpeg"
+                                    putExtra(Intent.EXTRA_STREAM, uri)
+                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                                 }
+                                context.startActivity(Intent.createChooser(intent, "Share virtual try-on"))
                             }
                         }
-                    }
+                    )
                 }
+            } else {
+                HistoryGrid(
+                    items = if (activeTab == "Saved Looks") {
+                        historyPreviews.filter { it.isSavedLook && !it.generatedImagePath.isNullOrBlank() }
+                    } else {
+                        historyPreviews.filter { !it.generatedImagePath.isNullOrBlank() }
+                    },
+                    emptyText = if (activeTab == "Saved Looks") {
+                        "No saved looks yet. Generate a try-on, then tap Save Look."
+                    } else {
+                        "No previous results yet. Generate a virtual try-on to build history."
+                    },
+                    onSelect = {
+                        viewModel.selectHistoryPreview(it)
+                        activeTab = "Studio"
+                    },
+                    onDelete = { viewModel.deleteHistoryEntry(it) }
+                )
             }
 
             Spacer(modifier = Modifier.height(24.dp))
         }
     }
 
-    // Interactive Garment Swap Dialog
-    activeSwapSlot?.let { layer ->
-        GarmentSwapDialog(
-            currentSlotTitle = layer.slot,
-            initialCategory = layer.category,
-            allGarments = allWardrobeItems,
-            onGarmentSelected = { newItem ->
-                viewModel.swapLayerItem(layer.slot, newItem)
-                Toast.makeText(context, "Swapped ${layer.slot} to ${newItem.name}", Toast.LENGTH_SHORT).show()
+    fullscreenModel?.let { (model, title) ->
+        FullscreenImagePreview(model = model, title = title) { fullscreenModel = null }
+    }
+
+    if (showCropDialog && !userPhotoUri.isNullOrBlank()) {
+        PhotoCropDialog(
+            photoPath = userPhotoUri!!,
+            onDismiss = { showCropDialog = false },
+            onConfirm = { left, top, right, bottom ->
+                showCropDialog = false
+                viewModel.cropPersonPhoto(left, top, right, bottom)
+            }
+        )
+    }
+
+    if (showPrivacyDialog) {
+        AlertDialog(
+            onDismissRequest = { showPrivacyDialog = false },
+            title = { Text("Photos are sent to Gemini", fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    "Your personal photo and selected clothing images will be sent to Google Gemini to generate a virtual try-on. They are not uploaded until you tap Generate. You can delete results from history at any time."
+                )
             },
-            onDismiss = { activeSwapSlot = null }
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.acceptPrivacy()
+                    showPrivacyDialog = false
+                    viewModel.generateTryOn()
+                }) { Text("Generate") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showPrivacyDialog = false }) { Text("Cancel") }
+            }
         )
     }
 }
 
 @Composable
-private fun ClickableLayerPill(
-    layer: ActiveLayerItem,
+private fun StudioTabs(activeTab: String, onTab: (String) -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(CardElevated)
+            .padding(4.dp)
+    ) {
+        listOf("Studio", "History", "Saved Looks").forEach { tab ->
+            val selected = activeTab == tab
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(if (selected) RoyalElectricViolet else Color.Transparent)
+                    .clickable { onTab(tab) }
+                    .padding(vertical = 8.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = tab,
+                    fontSize = 12.sp,
+                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                    color = if (selected) Color.White else TextSecondary
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PhotoStepCard(
+    userPhotoUri: String?,
+    photoError: String?,
+    onCamera: () -> Unit,
+    onGallery: () -> Unit,
+    onRotate: () -> Unit,
+    onCrop: () -> Unit,
+    onRemove: () -> Unit,
+    onPreview: (Any) -> Unit
+) {
+    WearWiseCard(modifier = Modifier.fillMaxWidth()) {
+        Column {
+            Text("1. Your photo", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+            Spacer(modifier = Modifier.height(8.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(220.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Color(0xFF1B2032))
+                    .clickable(enabled = userPhotoUri != null) {
+                        userPhotoUri?.let(onPreview)
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                if (!userPhotoUri.isNullOrBlank()) {
+                    AsyncImage(
+                        model = userPhotoUri,
+                        contentDescription = "Personal photo preview",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    Text(
+                        "Take or choose a well-lit full-body or upper-body photo.",
+                        color = TextSecondary,
+                        fontSize = 13.sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(16.dp)
+                    )
+                }
+            }
+            if (!photoError.isNullOrBlank()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(photoError, color = CoutureRose, fontSize = 12.sp)
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                ActionChip("Camera", Icons.Default.CameraAlt, Modifier.weight(1f), onCamera)
+                ActionChip("Gallery", Icons.Default.PhotoLibrary, Modifier.weight(1f), onGallery)
+            }
+            if (!userPhotoUri.isNullOrBlank()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    ActionChip("Rotate", Icons.Default.Rotate90DegreesCcw, Modifier.weight(1f), onRotate)
+                    ActionChip("Crop 3:4", Icons.Default.Crop, Modifier.weight(1f), onCrop)
+                    ActionChip("Remove", Icons.Default.Close, Modifier.weight(1f), onRemove)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ClothingStepCard(
+    garments: List<SelectedTryOnGarment>,
+    wardrobeItems: List<ClothingItem>,
+    outfits: List<com.example.domain.model.Outfit>,
+    category: String,
+    onCategory: (String) -> Unit,
+    onGarment: (ClothingItem) -> Unit,
+    onOutfit: (com.example.domain.model.Outfit) -> Unit,
+    onRemove: (SelectedTryOnGarment) -> Unit,
+    onUpload: (String) -> Unit
+) {
+    val context = LocalContext.current
+    val categories = listOf("All", "Tops", "Bottoms", "Dresses", "Skirts", "Outerwear", "Shoes", "Outfits")
+    val filtered = wardrobeItems.filter {
+        category == "All" || category == "Outfits" || it.category.equals(category, true) ||
+            (category == "Tops" && it.category.contains("top", true)) ||
+            (category == "Bottoms" && it.category.contains("bottom", true))
+    }
+
+    WearWiseCard(modifier = Modifier.fillMaxWidth()) {
+        Column {
+            Text("2. Select clothing", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                categories.forEach { cat ->
+                    val selected = category == cat
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(if (selected) RoyalElectricViolet else Color(0xFF1B2032))
+                            .clickable { onCategory(cat) }
+                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                    ) {
+                        Text(cat, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            TextButton(onClick = { onUpload(if (category == "All" || category == "Outfits") "Tops" else category) }) {
+                Text("Upload clothing photo", color = CoutureAmber, fontSize = 12.sp)
+            }
+            if (garments.isNotEmpty()) {
+                Text("Selected", fontSize = 11.sp, color = TextMuted, fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    garments.forEach { garment ->
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Color(0xFF1B2032))
+                                .border(1.dp, CardBorder, RoundedCornerShape(12.dp))
+                                .padding(8.dp)
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                AsyncImage(
+                                    model = garment.imageUri ?: garment.imageRes ?: garment.catalogAssetName?.let {
+                                        context.resources.getIdentifier(it, "drawable", context.packageName).takeIf { id -> id != 0 }
+                                    },
+                                    contentDescription = garment.name,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier
+                                        .size(54.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                )
+                                Text(
+                                    garment.name,
+                                    fontSize = 10.sp,
+                                    color = TextPrimary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.width(64.dp)
+                                )
+                                Icon(
+                                    Icons.Default.Close,
+                                    contentDescription = "Remove",
+                                    tint = CoutureRose,
+                                    modifier = Modifier
+                                        .size(14.dp)
+                                        .clickable { onRemove(garment) }
+                                )
+                            }
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+            }
+
+            if (category == "Outfits") {
+                if (outfits.isEmpty()) {
+                    Text("No saved outfits yet.", color = TextSecondary, fontSize = 12.sp)
+                } else {
+                    outfits.take(8).forEach { outfit ->
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Color(0xFF1B2032))
+                                .clickable { onOutfit(outfit) }
+                                .padding(10.dp)
+                        ) {
+                            Text(outfit.title, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
+                    }
+                }
+            } else {
+                val display = if (category == "All") wardrobeItems.take(12) else filtered.take(12)
+                if (display.isEmpty()) {
+                    Text("No garments in this category. Upload a clothing photo instead.", color = TextSecondary, fontSize = 12.sp)
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        display.chunked(3).forEach { row ->
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                row.forEach { item ->
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(Color(0xFF1B2032))
+                                            .clickable { onGarment(item) }
+                                            .padding(6.dp)
+                                    ) {
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                            AsyncImage(
+                                                model = item.imageUri ?: item.imageUrl ?: item.imageRes ?: item.catalogAssetName?.let {
+                                                    context.resources.getIdentifier(it, "drawable", context.packageName).takeIf { id -> id != 0 }
+                                                },
+                                                contentDescription = item.name,
+                                                contentScale = ContentScale.Crop,
+                                                modifier = Modifier
+                                                    .height(64.dp)
+                                                    .fillMaxWidth()
+                                                    .clip(RoundedCornerShape(8.dp))
+                                            )
+                                            Text(item.name, fontSize = 10.sp, color = TextPrimary, maxLines = 1)
+                                        }
+                                    }
+                                }
+                                repeat(3 - row.size) { Spacer(modifier = Modifier.weight(1f)) }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StudioControlsCard(
+    fitType: String,
+    pose: String,
+    lighting: String,
+    onFit: (String) -> Unit,
+    onPose: (String) -> Unit,
+    onLighting: (String) -> Unit
+) {
+    WearWiseCard(modifier = Modifier.fillMaxWidth()) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("3. Fit and lighting", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                listOf("Relaxed", "Tailored", "Slim").forEach { fit ->
+                    val selected = fitType == fit
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(if (selected) RoyalElectricViolet else Color(0xFF1B2032))
+                            .clickable { onFit(fit) }
+                            .padding(vertical = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(fit, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    }
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                ControlTile(
+                    label = "POSE",
+                    value = pose,
+                    modifier = Modifier.weight(1f),
+                    onClick = {
+                        onPose(if (pose == "Natural Stance") "Confident Stance" else "Natural Stance")
+                    }
+                )
+                ControlTile(
+                    label = "LIGHTING",
+                    value = lighting,
+                    modifier = Modifier.weight(1f),
+                    onClick = {
+                        onLighting(
+                            if (lighting == "Keep original lighting") "Studio Softbox" else "Keep original lighting"
+                        )
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ControlTile(label: String, value: String, modifier: Modifier, onClick: () -> Unit) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(Color(0xFF1B2032))
+            .clickable(onClick = onClick)
+            .padding(10.dp)
+    ) {
+        Column {
+            Text(label, fontSize = 9.sp, color = TextMuted)
+            Text(value, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+        }
+    }
+}
+
+@Composable
+private fun ResultCard(
+    beforePath: String,
+    afterPath: String,
+    preview: TryOnPreview,
+    comparisonMode: String,
+    onMode: (String) -> Unit,
+    onFullscreen: (Any, String) -> Unit,
+    onSaveLook: () -> Unit,
+    onDownload: () -> Unit,
+    onShare: () -> Unit
+) {
+    WearWiseCard(modifier = Modifier.fillMaxWidth()) {
+        Column {
+            Text("4. Before & after", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("Slider", "Side by side", "After").forEach { mode ->
+                    val selected = comparisonMode == mode
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(if (selected) RoyalElectricViolet else Color(0xFF1B2032))
+                            .clickable { onMode(mode) }
+                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                    ) {
+                        Text(mode, fontSize = 11.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+            when (comparisonMode) {
+                "Slider" -> BeforeAfterSlider(
+                    beforeModel = beforePath,
+                    afterModel = afterPath,
+                    modifier = Modifier.fillMaxWidth().height(420.dp)
+                )
+                "Side by side" -> SideBySideComparison(
+                    beforeModel = beforePath,
+                    afterModel = afterPath,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                else -> Box {
+                    AsyncImage(
+                        model = afterPath,
+                        contentDescription = "AFTER — AI Virtual Try-On",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(420.dp)
+                            .clip(RoundedCornerShape(24.dp))
+                            .clickable { onFullscreen(afterPath, "AFTER — AI Virtual Try-On") }
+                    )
+                    ComparisonBadge(
+                        text = "AFTER — AI Virtual Try-On",
+                        modifier = Modifier.padding(12.dp)
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                ActionChip("Zoom", Icons.Default.ZoomIn, Modifier.weight(1f)) {
+                    onFullscreen(afterPath, "AFTER — AI Virtual Try-On")
+                }
+                ActionChip(
+                    if (preview.isSavedLook) "Saved" else "Save Look",
+                    if (preview.isSavedLook) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                    Modifier.weight(1f),
+                    onSaveLook
+                )
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                ActionChip("Download", Icons.Default.Download, Modifier.weight(1f), onDownload)
+                ActionChip("Share", Icons.Default.Share, Modifier.weight(1f), onShare)
+            }
+        }
+    }
+}
+
+@Composable
+private fun HistoryGrid(
+    items: List<TryOnPreview>,
+    emptyText: String,
+    onSelect: (TryOnPreview) -> Unit,
+    onDelete: (Long) -> Unit
+) {
+    Text("Virtual Try-On Archive", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+    Spacer(modifier = Modifier.height(12.dp))
+    if (items.isEmpty()) {
+        Text(emptyText, fontSize = 13.sp, color = TextSecondary, textAlign = TextAlign.Center)
+    } else {
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(2),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.fillMaxWidth().height(460.dp)
+        ) {
+            items(items, key = { it.id }) { item ->
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(CardElevated)
+                        .border(1.dp, CardBorder, RoundedCornerShape(16.dp))
+                        .clickable { onSelect(item) }
+                        .padding(8.dp)
+                ) {
+                    Column {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(150.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Color(0xFF1B2032))
+                        ) {
+                            if (!item.generatedImagePath.isNullOrBlank()) {
+                                AsyncImage(
+                                    model = item.generatedImagePath,
+                                    contentDescription = "Saved try-on",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(6.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xCC0B0D14))
+                                    .clickable { onDelete(item.id) }
+                                    .padding(6.dp)
+                            ) {
+                                Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.White, modifier = Modifier.size(14.dp))
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            item.garmentSummary ?: "${item.fitType} • ${item.pose}",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimary,
+                            maxLines = 2
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ActionChip(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
     Box(
-        modifier = Modifier
+        modifier = modifier
             .clip(RoundedCornerShape(12.dp))
             .background(Color(0xFF1B2032))
             .border(1.dp, CardBorder, RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
-            .padding(horizontal = 8.dp, vertical = 6.dp)
+            .padding(vertical = 10.dp),
+        contentAlignment = Alignment.Center
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(layer.slot, fontSize = 9.sp, fontWeight = FontWeight.Bold, color = TextMuted)
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = if (layer.title.length > 8) layer.title.take(7) + ".." else layer.title,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                color = TextPrimary
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(6.dp)
-                        .clip(CircleShape)
-                        .background(layer.dotColor)
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Icon(
-                    imageVector = Icons.Default.SwapHoriz,
-                    contentDescription = "Swap",
-                    tint = CoutureAmber,
-                    modifier = Modifier.size(10.dp)
-                )
-            }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, contentDescription = label, tint = CoutureAmber, modifier = Modifier.size(14.dp))
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(label, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+        }
+    }
+}
+
+@Composable
+private fun ErrorBanner(message: String, onRetry: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(Color(0x33F43F5E))
+            .padding(12.dp)
+    ) {
+        Text(message, color = TextPrimary, fontSize = 12.sp)
+        Spacer(modifier = Modifier.height(6.dp))
+        TextButton(onClick = onRetry) {
+            Text("Retry", color = CoutureEmerald, fontWeight = FontWeight.Bold)
         }
     }
 }

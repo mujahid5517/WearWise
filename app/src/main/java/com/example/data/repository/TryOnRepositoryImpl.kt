@@ -2,39 +2,41 @@ package com.example.data.repository
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.net.Uri
-import android.util.Base64
-import android.util.Log
-import com.example.BuildConfig
+import com.example.data.local.ApiKeyManager
 import com.example.data.local.AppDatabase
 import com.example.data.local.entity.TryOnPreviewEntity
 import com.example.data.mapper.toDomain
-import com.example.data.remote.GeminiClient
-import com.example.data.remote.GeminiContent
-import com.example.data.remote.GeminiGenerateContentRequest
-import com.example.data.remote.GeminiGenerationConfig
-import com.example.data.remote.GeminiImageConfig
-import com.example.data.remote.GeminiInlineData
-import com.example.data.remote.GeminiPart
-import com.example.data.local.ApiKeyManager
+import com.example.data.media.EncodedTryOnImage
+import com.example.data.media.TryOnFileStore
+import com.example.data.remote.tryon.CompositeVirtualTryOnProvider
+import com.example.data.remote.tryon.FirebaseAiVirtualTryOnProvider
+import com.example.data.remote.tryon.GeminiVirtualTryOnProvider
+import com.example.data.remote.tryon.TryOnCloudStore
+import com.example.data.remote.tryon.TryOnPromptBuilder
+import com.example.data.remote.tryon.VirtualTryOnImageProvider
+import com.example.data.remote.tryon.VirtualTryOnRequest
 import com.example.data.sync.SyncManager
+import com.example.domain.model.SelectedTryOnGarment
+import com.example.domain.model.TryOnGenerationException
 import com.example.domain.model.TryOnPreview
 import com.example.domain.repository.TryOnRepository
-import com.example.presentation.common.WearWiseDrawables
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
-import java.io.ByteArrayOutputStream
-import java.io.File
 
 class TryOnRepositoryImpl(
     private val context: Context,
     private val database: AppDatabase,
     private val apiKeyManager: ApiKeyManager,
-    private val syncManager: SyncManager
+    private val syncManager: SyncManager,
+    private val fileStore: TryOnFileStore = TryOnFileStore(context),
+    private val imageProvider: VirtualTryOnImageProvider = CompositeVirtualTryOnProvider(
+        FirebaseAiVirtualTryOnProvider(),
+        GeminiVirtualTryOnProvider()
+    ),
+    private val cloudStore: TryOnCloudStore? = null
 ) : TryOnRepository {
 
     override fun getAllTryOnPreviews(): Flow<List<TryOnPreview>> {
@@ -44,144 +46,166 @@ class TryOnRepositoryImpl(
     }
 
     override suspend fun deleteTryOnPreview(id: Long) {
+        val existing = database.tryOnPreviewDao().getTryOnPreviewById(id)
+        existing?.generatedImagePath?.let { fileStore.deleteIfOwned(it) }
+        existing?.userPhotoPath?.let { fileStore.deleteIfOwned(it) }
         database.tryOnPreviewDao().deleteTryOnPreviewById(id)
         syncManager.enqueue("DELETE", "tryon", id)
+        runCatching { cloudStore?.delete(id) }
     }
 
-    override suspend fun simulateTryOn(
+    override suspend fun setSavedLook(id: Long, saved: Boolean) {
+        database.tryOnPreviewDao().setSavedLook(id, saved)
+        syncManager.enqueue("UPDATE", "tryon", id)
+        runCatching { cloudStore?.setSavedLook(id, saved) }
+    }
+
+    override suspend fun persistPersonPhoto(uri: String): String = withContext(Dispatchers.IO) {
+        fileStore.persistPersonPhoto(Uri.parse(uri)).getOrElse { throw wrapImageError(it) }
+    }
+
+    override suspend fun persistGarmentPhoto(uri: String): String = withContext(Dispatchers.IO) {
+        fileStore.persistGarmentPhoto(Uri.parse(uri)).getOrElse { throw wrapImageError(it) }
+    }
+
+    override suspend fun persistPersonBitmap(bitmap: Bitmap): String = withContext(Dispatchers.IO) {
+        fileStore.persistBitmap(bitmap, "person").getOrElse { throw wrapImageError(it) }
+    }
+
+    override suspend fun adjustPersonPhoto(path: String, rotationDegrees: Int): String =
+        withContext(Dispatchers.IO) {
+            fileStore.rotateAndCropToPortrait(path, rotationDegrees).getOrElse { throw wrapImageError(it) }
+        }
+
+    override suspend fun rotatePersonPhoto(path: String, rotationDegrees: Int): String =
+        withContext(Dispatchers.IO) {
+            fileStore.rotatePhoto(path, rotationDegrees).getOrElse { throw wrapImageError(it) }
+        }
+
+    override suspend fun cropPersonPhoto(
+        path: String,
+        left: Float,
+        top: Float,
+        right: Float,
+        bottom: Float
+    ): String = withContext(Dispatchers.IO) {
+        fileStore.cropNormalized(path, left, top, right, bottom).getOrElse { throw wrapImageError(it) }
+    }
+
+    override suspend fun saveGeneratedToGallery(path: String): Uri = withContext(Dispatchers.IO) {
+        fileStore.saveToGallery(path).getOrElse { throw wrapImageError(it) }
+    }
+
+    override fun shareUriForGenerated(path: String): Uri = fileStore.shareUriForPath(path)
+
+    override suspend fun generateTryOn(
         outfitId: Long,
         fitType: String,
         pose: String,
         lighting: String,
-        userPhotoUri: String?,
-        garmentDescriptions: List<String>
+        userPhotoUri: String,
+        garments: List<SelectedTryOnGarment>
     ): TryOnPreview = withContext(Dispatchers.IO) {
         val apiKey = apiKeyManager.getEffectiveApiKey()
-        val hasValidKey = apiKey.isNotEmpty() && !apiKey.contains("MY_GEMINI_API_KEY")
-
-        var generatedImagePath: String? = null
-
-        val garmentsText = if (garmentDescriptions.isNotEmpty()) {
-            garmentDescriptions.joinToString(", ")
-        } else {
-            "White Oxford Cotton shirt, Olive knit blazer, Navy tailored chinos, Burnished Italian loafers"
+        if (userPhotoUri.isBlank()) {
+            throw TryOnGenerationException.InvalidImage("Add a personal photo before generating a virtual try-on.")
+        }
+        if (garments.isEmpty()) {
+            throw TryOnGenerationException.InvalidImage("Select at least one clothing item.")
         }
 
-        if (hasValidKey) {
-            try {
-                val promptText = if (!userPhotoUri.isNullOrEmpty()) {
-                    "Photorealistic high-fashion virtual try-on portrait of THIS SPECIFIC PERSON from the provided reference photo wearing the following ensemble: $garmentsText. Fit style: $fitType. Pose: $pose. Lighting: $lighting. Flawlessly preserve their actual face, facial features, body proportions, skin tone, and hair while photorealistically draping the specified garments onto their body with authentic fabric textures, natural drape, and accurate seams."
-                } else {
-                    "High-fashion haute couture virtual try-on editorial photography of a model trying on: $garmentsText. Fit style: $fitType. Pose: $pose. Lighting: $lighting. 8k photorealistic, flawless fabric drape, authentic stitching and texture."
-                }
-
-                val partsList = mutableListOf<GeminiPart>()
-                partsList.add(GeminiPart(text = promptText))
-
-                // If user uploaded a photo, attach it as inline multimodal data
-                if (!userPhotoUri.isNullOrEmpty()) {
-                    val base64Data = loadPhotoAsBase64(userPhotoUri)
-                    if (base64Data != null) {
-                        partsList.add(GeminiPart(inlineData = GeminiInlineData(mimeType = "image/jpeg", data = base64Data)))
-                    }
-                }
-
-                val request = GeminiGenerateContentRequest(
-                    contents = listOf(GeminiContent(parts = partsList)),
-                    generationConfig = GeminiGenerationConfig(
-                        temperature = 0.4f,
-                        responseModalities = listOf("TEXT", "IMAGE"),
-                        imageConfig = GeminiImageConfig(aspectRatio = "9:16", imageSize = "1K")
-                    )
-                )
-
-                val response = GeminiClient.apiService.generateImageContent(apiKey, request)
-                val imagePart = response.candidates
-                    ?.firstOrNull()
-                    ?.content
-                    ?.parts
-                    ?.firstOrNull { it.inlineData != null }
-
-                if (imagePart?.inlineData?.data != null) {
-                    val decodedBytes = Base64.decode(imagePart.inlineData.data, Base64.DEFAULT)
-                    val cacheFile = File(context.cacheDir, "tryon_sim_${System.currentTimeMillis()}.jpg")
-                    cacheFile.writeBytes(decodedBytes)
-                    generatedImagePath = cacheFile.absolutePath
-                    Log.d("WearWiseTryOn", "Generated Gemini try-on image saved to ${cacheFile.absolutePath}")
-                }
-            } catch (e: Exception) {
-                Log.w("WearWiseTryOn", "Gemini API call returned error, applying dynamic neural fallback", e)
-            }
-        } else {
-            // Emulate slight physics calculation latency for realistic responsiveness
-            delay(800)
+        val personImage = try {
+            fileStore.encodeForApi(userPhotoUri)
+        } catch (e: Exception) {
+            throw wrapImageError(e)
         }
 
-        // Dynamically compute harmony score
-        val baseScore = when (fitType) {
-            "Tailored" -> 96
-            "Slim" -> 94
-            else -> 91
+        val clothingImages = garments.mapNotNull { garment -> encodeGarment(garment) }
+        if (clothingImages.isEmpty()) {
+            throw TryOnGenerationException.InvalidImage(
+                "Could not read the selected clothing images. Upload a clothing photo or choose a wardrobe item that has an image."
+            )
         }
-        val lightingBonus = if (lighting == "Studio Softbox" || lighting == "Warm Daylight") 2 else 1
-        val computedScore = (baseScore + lightingBonus).coerceAtMost(99)
+        val garmentsText = garments.joinToString("; ") { "${it.category}: ${it.name}" }
+        val prompt = TryOnPromptBuilder.build(
+            garmentsText,
+            fitType,
+            pose,
+            lighting,
+            clothingImages.size
+        )
 
-        // Select high-fidelity realistic visual representation matching fit/pose
-        val previewDrawable = when {
-            fitType == "Relaxed" -> WearWiseDrawables.TryOnRelaxedChic
-            fitType == "Slim" -> WearWiseDrawables.TryOnCasualSmart
-            pose == "Editorial Stride" -> WearWiseDrawables.AcademicLook
-            else -> WearWiseDrawables.TryOnModel
+        val bytes = imageProvider.generate(
+            apiKey,
+            VirtualTryOnRequest(
+                personImage = personImage,
+                clothingImages = clothingImages,
+                prompt = prompt
+            )
+        )
+        if (bytes.isEmpty()) {
+            throw TryOnGenerationException.NoImageReturned()
         }
 
+        val generatedPath = fileStore.persistGeneratedBytes(bytes)
         val previewEntity = TryOnPreviewEntity(
             outfitId = outfitId,
             userPhotoPath = userPhotoUri,
-            generatedImagePath = generatedImagePath,
-            previewImageRes = previewDrawable,
-            harmonyScore = computedScore,
+            generatedImagePath = generatedPath,
+            previewImageRes = null,
+            harmonyScore = when (fitType) {
+                "Tailored" -> 96
+                "Slim" -> 94
+                else -> 91
+            },
             fitType = fitType,
             pose = pose,
             lighting = lighting,
-            activePiecesCount = if (garmentDescriptions.isNotEmpty()) garmentDescriptions.size else 4,
+            activePiecesCount = garments.size,
+            isSavedLook = false,
+            garmentSummary = garmentsText,
             createdAt = System.currentTimeMillis()
         )
-
         val id = database.tryOnPreviewDao().insertTryOnPreview(previewEntity)
         syncManager.enqueue("CREATE", "tryon", id)
-        previewEntity.copy(id = id).toDomain()
+        val saved = previewEntity.copy(id = id).toDomain()
+        runCatching { cloudStore?.upsertMetadata(saved) }
+        saved
     }
 
-    private fun loadPhotoAsBase64(uriString: String): String? {
-        return try {
-            val uri = Uri.parse(uriString)
-            val inputStream = if (uri.scheme == "file") {
-                File(uri.path ?: "").inputStream()
-            } else {
-                context.contentResolver.openInputStream(uri)
+    private fun encodeGarment(garment: SelectedTryOnGarment): EncodedTryOnImage? {
+        val uri = garment.imageUri
+        if (!uri.isNullOrBlank()) {
+            return try {
+                fileStore.encodeForApi(uri)
+            } catch (_: Exception) {
+                null
             }
-            val originalBitmap = BitmapFactory.decodeStream(inputStream)
-            inputStream?.close()
-
-            if (originalBitmap == null) return null
-
-            // Scale down if large to avoid high payload size
-            val maxDim = 1024
-            val scaledBitmap = if (originalBitmap.width > maxDim || originalBitmap.height > maxDim) {
-                val ratio = originalBitmap.width.toFloat() / originalBitmap.height.toFloat()
-                val targetW = if (ratio > 1) maxDim else (maxDim * ratio).toInt()
-                val targetH = if (ratio > 1) (maxDim / ratio).toInt() else maxDim
-                Bitmap.createScaledBitmap(originalBitmap, targetW, targetH, true)
-            } else {
-                originalBitmap
+        }
+        val remoteUrl = garment.imageUrl
+        if (!remoteUrl.isNullOrBlank()) {
+            return try {
+                val bytes = java.net.URL(remoteUrl).openStream().use { it.readBytes() }
+                val file = java.io.File(context.cacheDir, "wardrobe_${System.currentTimeMillis()}.jpg")
+                file.writeBytes(bytes)
+                fileStore.encodeForApi(file.absolutePath)
+            } catch (_: Exception) {
+                null
             }
+        }
+        val res = garment.imageRes ?: garment.catalogAssetName?.let {
+            context.resources.getIdentifier(it, "drawable", context.packageName).takeIf { id -> id != 0 }
+        } ?: return null
+        return fileStore.encodeDrawable(res)
+    }
 
-            val outputStream = ByteArrayOutputStream()
-            scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 85, outputStream)
-            Base64.encodeToString(outputStream.toByteArray(), Base64.NO_WRAP)
-        } catch (e: Exception) {
-            Log.e("WearWiseTryOn", "Failed to encode photo to base64", e)
-            null
+    private fun wrapImageError(error: Throwable): TryOnGenerationException {
+        return if (error is TryOnGenerationException) {
+            error
+        } else {
+            TryOnGenerationException.InvalidImage(
+                error.message ?: "The selected image could not be processed."
+            )
         }
     }
 }
