@@ -6,12 +6,48 @@ import com.example.data.local.entity.TryOnPreviewEntity
 import com.example.data.local.entity.UserProfileEntity
 import com.example.data.local.entity.WeeklyScheduleEntity
 import com.example.data.local.entity.WearHistoryEntity
+import com.example.data.local.entity.ShoppingItemEntity
 import com.example.domain.model.ClothingItem
 import com.example.domain.model.Outfit
 import com.example.domain.model.TryOnPreview
 import com.example.domain.model.UserProfile
 import com.example.domain.model.WeeklyScheduleItem
 import com.example.domain.model.WearHistory
+import com.example.domain.model.ShoppingItem
+
+fun ShoppingItemEntity.toDomain() = ShoppingItem(
+    id = id,
+    remoteId = remoteId,
+    ownerUid = ownerUid,
+    name = name,
+    category = category,
+    estimatedPrice = estimatedPrice,
+    currency = currency,
+    shoppingUrl = shoppingUrl,
+    reason = reason,
+    priority = priority,
+    status = status,
+    favorite = favorite,
+    createdAt = createdAt,
+    updatedAt = updatedAt
+)
+
+fun ShoppingItem.toEntity() = ShoppingItemEntity(
+    id = id,
+    remoteId = remoteId,
+    ownerUid = ownerUid,
+    name = name,
+    category = category,
+    estimatedPrice = estimatedPrice,
+    currency = currency,
+    shoppingUrl = shoppingUrl,
+    reason = reason,
+    priority = priority,
+    status = status,
+    favorite = favorite,
+    createdAt = createdAt,
+    updatedAt = updatedAt
+)
 
 fun UserProfileEntity.toDomain(): UserProfile {
     return UserProfile(

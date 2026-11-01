@@ -12,10 +12,12 @@ import com.example.data.remote.tryon.FirebaseAiVirtualTryOnProvider
 import com.example.data.remote.tryon.GeminiVirtualTryOnProvider
 import com.example.data.remote.tryon.TryOnCloudStore
 import com.example.data.remote.WardrobeCloudStore
+import com.example.data.remote.ShoppingCloudStore
 import com.example.data.repository.TryOnRepositoryImpl
 import com.example.data.repository.UserRepositoryImpl
 import com.example.data.repository.WardrobeRepositoryImpl
 import com.example.data.repository.OpenMeteoWeatherRepository
+import com.example.data.repository.ShoppingRepositoryImpl
 import com.example.data.sync.ConnectivityMonitor
 import com.example.data.sync.SyncManager
 import com.example.domain.repository.OutfitRepository
@@ -23,6 +25,7 @@ import com.example.domain.repository.TryOnRepository
 import com.example.domain.repository.UserRepository
 import com.example.domain.repository.WardrobeRepository
 import com.example.domain.repository.WeatherRepository
+import com.example.domain.repository.ShoppingRepository
 import com.example.domain.usecase.ExecuteTryOnUseCase
 import com.example.domain.usecase.GetDailyRecommendationUseCase
 import com.example.domain.usecase.ManageWardrobeUseCase
@@ -71,6 +74,13 @@ class AppContainer(context: Context) {
     )
     val outfitRepository: OutfitRepository = OutfitRepositoryImpl(database, syncManager, auth, apiKeyManager)
     val weatherRepository: WeatherRepository = OpenMeteoWeatherRepository(context)
+    val shoppingCloudStore = ShoppingCloudStore(auth, firestore)
+    val shoppingRepository: ShoppingRepository = ShoppingRepositoryImpl(
+        database = database,
+        apiKeyManager = apiKeyManager,
+        cloudStore = shoppingCloudStore,
+        connectivity = connectivityMonitor.isOnline
+    )
     val tryOnFileStore = TryOnFileStore(context)
     val tryOnImageProvider = CompositeVirtualTryOnProvider(
         FirebaseAiVirtualTryOnProvider(),

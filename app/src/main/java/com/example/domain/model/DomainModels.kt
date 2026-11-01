@@ -104,6 +104,44 @@ data class TryOnPreview(
     val createdAt: Long = System.currentTimeMillis()
 )
 
+data class ShoppingItem(
+    val id: Long = 0L,
+    val remoteId: String? = null,
+    val ownerUid: String = "",
+    val name: String,
+    val category: String,
+    val estimatedPrice: Double = 0.0,
+    val currency: String = "USD",
+    val shoppingUrl: String = "",
+    val reason: String = "",
+    val priority: String = "MEDIUM",
+    val status: String = "NEEDED",
+    val favorite: Boolean = false,
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis()
+)
+
+data class ShoppingRecommendation(
+    val name: String,
+    val category: String,
+    val priority: String,
+    val why: String,
+    val suggestedColor: String,
+    val suggestedStyle: String,
+    val budgetTarget: Double,
+    val compatibleItems: List<String>,
+    val outfitCombinationCount: Int,
+    val affordableAlternatives: List<String> = emptyList()
+)
+
+data class ShoppingAnalysis(
+    val summary: String,
+    val duplicateNotes: List<String>,
+    val recommendations: List<ShoppingRecommendation>
+)
+
+data class ShoppingChatMessage(val text: String, val isUser: Boolean)
+
 data class SelectedTryOnGarment(
     val slot: String,
     val name: String,

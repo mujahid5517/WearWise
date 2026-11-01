@@ -12,6 +12,7 @@ import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
 import retrofit2.http.Body
 import retrofit2.http.Header
+import retrofit2.http.GET
 import retrofit2.http.POST
 import retrofit2.http.Path
 import java.io.IOException
@@ -20,12 +21,14 @@ import java.util.concurrent.TimeUnit
 @JsonClass(generateAdapter = true)
 data class GeminiGenerateContentRequest(
     val contents: List<GeminiContent>,
-    val generationConfig: GeminiGenerationConfig? = null
+    val generationConfig: GeminiGenerationConfig? = null,
+    val systemInstruction: GeminiContent? = null
 )
 
 @JsonClass(generateAdapter = true)
 data class GeminiContent(
-    val parts: List<GeminiPart>
+    val parts: List<GeminiPart>,
+    val role: String? = null
 )
 
 @JsonClass(generateAdapter = true)
@@ -85,25 +88,34 @@ data class GeminiErrorDetail(
 )
 
 interface GeminiApiService {
-    @POST("v1beta/models/{model}:generateContent")
+    @GET("v1/models/{model}")
+    suspend fun getModel(
+        @Path("model") model: String,
+        @Header("x-goog-api-key") apiKey: String
+    ): GeminiModelInfo
+
+    @POST("v1/models/{model}:generateContent")
     suspend fun generateContent(
         @Path("model") model: String,
         @Header("x-goog-api-key") apiKey: String,
         @Body request: GeminiGenerateContentRequest
     ): GeminiGenerateContentResponse
 
-    @POST("v1beta/models/gemini-3.6-flash:generateContent")
+    @POST("v1/models/gemini-2.5-flash:generateContent")
     suspend fun generateTextContent(
         @Header("x-goog-api-key") apiKey: String,
         @Body request: GeminiGenerateContentRequest
     ): GeminiGenerateContentResponse
 
-    @POST("v1beta/models/gemini-3.1-flash-image:generateContent")
-    suspend fun generateImageContent(
-        @Header("x-goog-api-key") apiKey: String,
-        @Body request: GeminiGenerateContentRequest
-    ): GeminiGenerateContentResponse
 }
+
+@JsonClass(generateAdapter = true)
+data class GeminiModelInfo(
+    val name: String? = null,
+    val supportedGenerationMethods: List<String>? = null,
+    val inputTokenLimit: Int? = null,
+    val outputTokenLimit: Int? = null
+)
 
 private class RedactingHttpLogger : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
@@ -134,10 +146,8 @@ private class RedactingHttpLogger : Interceptor {
 object GeminiClient {
     private const val BASE_URL = "https://generativelanguage.googleapis.com/"
 
-    const val TEXT_MODEL = "gemini-3.6-flash"
-    const val IMAGE_MODEL_PRIMARY = "gemini-nano-banana-2.1"
-    const val IMAGE_MODEL_FALLBACK = "gemini-3.1-flash-image"
-    const val IMAGE_MODEL_LITE = "gemini-3.1-flash-lite-image"
+    const val TEXT_MODEL = "gemini-2.5-flash"
+    const val IMAGE_MODEL = "gemini-3.1-flash-image"
 
     private val okHttpClient = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)

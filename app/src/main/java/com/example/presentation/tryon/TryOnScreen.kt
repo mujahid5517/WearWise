@@ -310,6 +310,15 @@ fun TryOnScreen(
                 val beforePath = userPhotoUri ?: preview?.userPhotoPath
                 if (!generatedPath.isNullOrBlank() && !beforePath.isNullOrBlank()) {
                     Spacer(modifier = Modifier.height(18.dp))
+                    if (statusMessage == "Your virtual outfit has been generated successfully!") {
+                        Text(
+                            text = statusMessage,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = CoutureEmerald
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
                     ResultCard(
                         beforePath = beforePath,
                         afterPath = generatedPath,

@@ -29,6 +29,8 @@ import com.example.presentation.planner.PlannerScreen
 import com.example.presentation.planner.PlannerViewModel
 import com.example.presentation.profile.ProfileScreen
 import com.example.presentation.profile.ProfileViewModel
+import com.example.presentation.shopping.ShoppingScreen
+import com.example.presentation.shopping.ShoppingViewModel
 import com.example.presentation.tryon.TryOnScreen
 import com.example.presentation.tryon.TryOnViewModel
 import com.example.presentation.wardrobe.WardrobeScreen
@@ -45,6 +47,7 @@ sealed class Screen(val route: String) {
     data object Avatar : Screen("avatar")
     data object Planner : Screen("planner")
     data object Profile : Screen("profile")
+    data object Shopping : Screen("shopping")
 }
 
 @Composable
@@ -63,6 +66,7 @@ fun WearWiseApp(container: AppContainer) {
         Screen.Closet.route,
         Screen.Avatar.route,
         Screen.Planner.route,
+        Screen.Shopping.route,
         Screen.Profile.route
     )
     val shouldShowBottomBar = currentRoute in mainDestinations
@@ -87,6 +91,14 @@ fun WearWiseApp(container: AppContainer) {
     }
     val profileViewModel = remember {
         ProfileViewModel(container.userProfileUseCase, container.apiKeyManager)
+    }
+    val shoppingViewModel = remember {
+        ShoppingViewModel(
+            container.shoppingRepository,
+            container.manageWardrobeUseCase,
+            container.userProfileUseCase,
+            container.getWeatherUseCase
+        )
     }
 
     androidx.compose.runtime.CompositionLocalProvider(
@@ -223,6 +235,12 @@ fun WearWiseApp(container: AppContainer) {
                                 popUpTo(0) { inclusive = true }
                             }
                         }
+                    )
+                }
+                composable(Screen.Shopping.route) {
+                    ShoppingScreen(
+                        viewModel = shoppingViewModel,
+                        onNavigateToProfile = { navController.navigate(Screen.Profile.route) }
                     )
                 }
                 }

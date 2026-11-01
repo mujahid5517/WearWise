@@ -137,3 +137,21 @@ data class WearHistoryEntity(
     val occasion: String,
     val ownerUid: String = ""
 )
+
+@Entity(tableName = "shopping_items")
+data class ShoppingItemEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0L,
+    val remoteId: String? = null,
+    val ownerUid: String = "",
+    val name: String,
+    val category: String,
+    val estimatedPrice: Double = 0.0,
+    val currency: String = "USD",
+    val shoppingUrl: String = "",
+    val reason: String = "",
+    val priority: String = "MEDIUM",
+    val status: String = "NEEDED",
+    val favorite: Boolean = false,
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis()
+)

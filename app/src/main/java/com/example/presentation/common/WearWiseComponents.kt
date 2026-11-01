@@ -188,6 +188,7 @@ fun WearWiseBottomBar(
         NavigationItem("closet", languageManager?.getString("nav_closet", currentLang) ?: "Closet", Icons.Default.Checkroom),
         NavigationItem("avatar", languageManager?.getString("nav_avatar", currentLang) ?: "Avatar", Icons.Default.Person),
         NavigationItem("planner", languageManager?.getString("nav_planner", currentLang) ?: "Planner", Icons.Default.CalendarMonth),
+        NavigationItem("shopping", "Shop", Icons.Default.Lightbulb),
         NavigationItem("profile", languageManager?.getString("nav_profile", currentLang) ?: "Profile", Icons.Default.Tune)
     )
 
@@ -214,9 +215,10 @@ fun WearWiseBottomBar(
 
                 Column(
                     modifier = Modifier
+                        .weight(1f)
                         .clip(RoundedCornerShape(12.dp))
                         .clickable { onNavigate(item.route) }
-                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                        .padding(horizontal = 3.dp, vertical = 6.dp)
                         .testTag("nav_tab_${item.route}"),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
@@ -229,9 +231,11 @@ fun WearWiseBottomBar(
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = item.label,
-                        fontSize = 11.sp,
+                        fontSize = 10.sp,
                         fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                        color = contentColor
+                        color = contentColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }

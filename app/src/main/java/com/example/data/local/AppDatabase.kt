@@ -13,6 +13,7 @@ import com.example.data.local.dao.TryOnPreviewDao
 import com.example.data.local.dao.UserProfileDao
 import com.example.data.local.dao.WeeklyScheduleDao
 import com.example.data.local.dao.WearHistoryDao
+import com.example.data.local.dao.ShoppingItemDao
 import com.example.data.local.entity.ClothingItemEntity
 import com.example.data.local.entity.OutfitEntity
 import com.example.data.local.entity.OutfitItemEntity
@@ -21,6 +22,7 @@ import com.example.data.local.entity.TryOnPreviewEntity
 import com.example.data.local.entity.UserProfileEntity
 import com.example.data.local.entity.WeeklyScheduleEntity
 import com.example.data.local.entity.WearHistoryEntity
+import com.example.data.local.entity.ShoppingItemEntity
 
 /**
  * Main Room database for WearWise.
@@ -38,9 +40,10 @@ import com.example.data.local.entity.WearHistoryEntity
         TryOnPreviewEntity::class,
         WeeklyScheduleEntity::class,
         SyncQueueEntity::class,
-        WearHistoryEntity::class
+        WearHistoryEntity::class,
+        ShoppingItemEntity::class
     ],
-    version = 9,
+    version = 10,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -50,6 +53,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun tryOnPreviewDao(): TryOnPreviewDao
     abstract fun weeklyScheduleDao(): WeeklyScheduleDao
     abstract fun wearHistoryDao(): WearHistoryDao
+    abstract fun shoppingItemDao(): ShoppingItemDao
     abstract fun syncQueueDao(): SyncQueueDao
 
     companion object {
@@ -149,6 +153,27 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""CREATE TABLE IF NOT EXISTS shopping_items (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    remoteId TEXT,
+                    ownerUid TEXT NOT NULL DEFAULT '',
+                    name TEXT NOT NULL,
+                    category TEXT NOT NULL,
+                    estimatedPrice REAL NOT NULL DEFAULT 0.0,
+                    currency TEXT NOT NULL DEFAULT 'USD',
+                    shoppingUrl TEXT NOT NULL DEFAULT '',
+                    reason TEXT NOT NULL DEFAULT '',
+                    priority TEXT NOT NULL DEFAULT 'MEDIUM',
+                    status TEXT NOT NULL DEFAULT 'NEEDED',
+                    favorite INTEGER NOT NULL DEFAULT 0,
+                    createdAt INTEGER NOT NULL,
+                    updatedAt INTEGER NOT NULL
+                )""".trimIndent())
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -163,6 +188,7 @@ abstract class AppDatabase : RoomDatabase() {
                     .addMigrations(MIGRATION_6_7)
                     .addMigrations(MIGRATION_7_8)
                     .addMigrations(MIGRATION_8_9)
+                    .addMigrations(MIGRATION_9_10)
                     .build()
                 INSTANCE = instance
                 instance

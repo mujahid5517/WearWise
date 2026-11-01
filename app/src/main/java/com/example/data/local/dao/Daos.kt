@@ -12,6 +12,7 @@ import com.example.data.local.entity.TryOnPreviewEntity
 import com.example.data.local.entity.UserProfileEntity
 import com.example.data.local.entity.WeeklyScheduleEntity
 import com.example.data.local.entity.WearHistoryEntity
+import com.example.data.local.entity.ShoppingItemEntity
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -153,4 +154,28 @@ interface WearHistoryDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(history: WearHistoryEntity): Long
+}
+
+@Dao
+interface ShoppingItemDao {
+    @Query("SELECT * FROM shopping_items ORDER BY createdAt DESC")
+    fun observeAll(): Flow<List<ShoppingItemEntity>>
+
+    @Query("SELECT * FROM shopping_items")
+    suspend fun snapshot(): List<ShoppingItemEntity>
+
+    @Query("SELECT * FROM shopping_items WHERE id = :id LIMIT 1")
+    suspend fun getById(id: Long): ShoppingItemEntity?
+
+    @Query("SELECT * FROM shopping_items WHERE remoteId = :remoteId LIMIT 1")
+    suspend fun getByRemoteId(remoteId: String): ShoppingItemEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(item: ShoppingItemEntity): Long
+
+    @Update
+    suspend fun update(item: ShoppingItemEntity)
+
+    @Query("DELETE FROM shopping_items WHERE id = :id")
+    suspend fun delete(id: Long)
 }

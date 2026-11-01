@@ -538,6 +538,14 @@ fun ProfileScreen(
                         lineHeight = 16.sp
                     )
 
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Test Connection generates a small real image to verify image access and uses your Gemini image quota.",
+                        fontSize = 11.sp,
+                        color = TextSecondary,
+                        lineHeight = 15.sp
+                    )
+
                     Spacer(modifier = Modifier.height(14.dp))
 
                     OutlinedTextField(

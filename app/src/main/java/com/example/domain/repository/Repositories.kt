@@ -9,6 +9,10 @@ import com.example.domain.model.WeeklyScheduleItem
 import com.example.domain.model.WeatherForecast
 import com.example.domain.model.WeatherLocation
 import com.example.domain.model.WearHistory
+import com.example.domain.model.ShoppingAnalysis
+import com.example.domain.model.ShoppingChatMessage
+import com.example.domain.model.ShoppingItem
+import com.example.domain.model.ShoppingRecommendation
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -76,4 +80,31 @@ interface TryOnRepository {
         userPhotoUri: String,
         garments: List<SelectedTryOnGarment>
     ): TryOnPreview
+}
+
+interface ShoppingRepository {
+    fun observeShoppingItems(): Flow<List<ShoppingItem>>
+    suspend fun analyzeWardrobe(
+        wardrobe: List<ClothingItem>,
+        profile: UserProfile?,
+        budget: Double,
+        currency: String,
+        occasion: String,
+        weather: String?,
+        focusCategory: String?
+    ): ShoppingAnalysis
+    suspend fun chat(
+        question: String,
+        history: List<ShoppingChatMessage>,
+        wardrobe: List<ClothingItem>,
+        profile: UserProfile?,
+        budget: Double,
+        currency: String,
+        occasion: String,
+        weather: String?,
+        focusCategory: String?
+    ): String
+    suspend fun addItem(item: ShoppingItem): Long
+    suspend fun updateItem(item: ShoppingItem)
+    suspend fun deleteItem(id: Long)
 }

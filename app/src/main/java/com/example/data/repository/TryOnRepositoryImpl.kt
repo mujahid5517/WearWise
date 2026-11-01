@@ -2,6 +2,7 @@ package com.example.data.repository
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import com.example.data.local.ApiKeyManager
 import com.example.data.local.AppDatabase
@@ -9,13 +10,12 @@ import com.example.data.local.entity.TryOnPreviewEntity
 import com.example.data.mapper.toDomain
 import com.example.data.media.EncodedTryOnImage
 import com.example.data.media.TryOnFileStore
-import com.example.data.remote.tryon.CompositeVirtualTryOnProvider
-import com.example.data.remote.tryon.FirebaseAiVirtualTryOnProvider
 import com.example.data.remote.tryon.GeminiVirtualTryOnProvider
 import com.example.data.remote.tryon.TryOnCloudStore
 import com.example.data.remote.tryon.TryOnPromptBuilder
 import com.example.data.remote.tryon.VirtualTryOnImageProvider
 import com.example.data.remote.tryon.VirtualTryOnRequest
+import com.example.data.remote.tryon.TryOnImageValidator
 import com.example.data.sync.SyncManager
 import com.example.domain.model.SelectedTryOnGarment
 import com.example.domain.model.TryOnGenerationException
@@ -32,10 +32,7 @@ class TryOnRepositoryImpl(
     private val apiKeyManager: ApiKeyManager,
     private val syncManager: SyncManager,
     private val fileStore: TryOnFileStore = TryOnFileStore(context),
-    private val imageProvider: VirtualTryOnImageProvider = CompositeVirtualTryOnProvider(
-        FirebaseAiVirtualTryOnProvider(),
-        GeminiVirtualTryOnProvider()
-    ),
+    private val imageProvider: VirtualTryOnImageProvider = GeminiVirtualTryOnProvider(),
     private val cloudStore: TryOnCloudStore? = null
 ) : TryOnRepository {
 
@@ -120,10 +117,9 @@ class TryOnRepositoryImpl(
             throw wrapImageError(e)
         }
 
-        val clothingImages = garments.mapNotNull { garment -> encodeGarment(garment) }
-        if (clothingImages.isEmpty()) {
-            throw TryOnGenerationException.InvalidImage(
-                "Could not read the selected clothing images. Upload a clothing photo or choose a wardrobe item that has an image."
+        val clothingImages = garments.map { garment ->
+            encodeGarment(garment) ?: throw TryOnGenerationException.InvalidImage(
+                "Could not read the selected clothing image for ${garment.name}. Upload another photo or choose a wardrobe item with an image."
             )
         }
         val garmentsText = garments.joinToString("; ") { "${it.category}: ${it.name}" }
@@ -146,6 +142,10 @@ class TryOnRepositoryImpl(
         if (bytes.isEmpty()) {
             throw TryOnGenerationException.NoImageReturned()
         }
+        val generatedBounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, generatedBounds)
+        TryOnImageValidator.validate("image/jpeg", bytes.size, generatedBounds.outWidth, generatedBounds.outHeight)
+            .getOrElse { throw TryOnGenerationException.InvalidImage(it.message ?: "Gemini returned an invalid image.") }
 
         val generatedPath = fileStore.persistGeneratedBytes(bytes)
         val previewEntity = TryOnPreviewEntity(
