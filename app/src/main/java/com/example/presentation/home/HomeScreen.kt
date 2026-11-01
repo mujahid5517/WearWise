@@ -279,7 +279,7 @@ fun HomeScreen(
 
     var activeSwapSlot by remember { mutableStateOf<DecomposedGarmentSlot?>(null) }
 
-    val userName = userProfileState?.firstName ?: "Yared"
+    val userName = userProfileState?.firstName?.trim()?.takeIf(String::isNotEmpty) ?: "there"
     val outfit = outfitState ?: return
 
     Column(
@@ -301,7 +301,7 @@ fun HomeScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp, vertical = 10.dp)
         ) {
-            // Header: Good Morning, Yared
+            // Greeting follows the currently signed-in user's profile.
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,

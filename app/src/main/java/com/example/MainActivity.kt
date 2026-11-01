@@ -23,30 +23,14 @@ class MainActivity : ComponentActivity() {
 
         val container = AppContainer(this)
 
-        // Verify Firebase initialization and Anonymous Auth
+        // Firebase Authentication restores its persisted user session automatically.
         try {
             val firebaseApp = FirebaseApp.getInstance()
             val firestore = container.firestore
-            val auth = container.auth
 
             Log.d("WearWiseFirebase", "Firebase initialized successfully")
             Log.d("WearWiseFirebase", "Project ID: ${firebaseApp.options.projectId}")
             Log.d("WearWiseFirebase", "Firestore instance: $firestore")
-
-            // Authenticate test client anonymously
-            if (auth.currentUser == null) {
-                auth.signInAnonymously()
-                    .addOnSuccessListener { authResult ->
-                        val user = authResult.user
-                        Log.d("WearWiseFirebase", "Anonymous Auth Successful! User ID: ${user?.uid}")
-                    }
-                    .addOnFailureListener { e ->
-                        Log.w("WearWiseFirebase", "Anonymous Auth Failure (ensure Anonymous Auth is enabled in Firebase Console)", e)
-                    }
-            } else {
-                Log.d("WearWiseFirebase", "Already authenticated. Active User ID: ${auth.currentUser?.uid}")
-            }
-
         } catch (e: Exception) {
             Log.e("WearWiseFirebase", "Firebase initialization failed", e)
         }

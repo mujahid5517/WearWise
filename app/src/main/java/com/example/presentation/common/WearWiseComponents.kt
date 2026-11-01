@@ -39,6 +39,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -65,6 +66,7 @@ import android.util.Log
 import coil.compose.AsyncImage
 import com.example.domain.model.ClothingItem
 import com.example.domain.model.Outfit
+import com.example.domain.model.UserProfile
 import com.example.ui.theme.CardBorder
 import com.example.ui.theme.CardElevated
 import com.example.ui.theme.CardSelected
@@ -81,6 +83,8 @@ import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
 
+val LocalWearWiseProfile = compositionLocalOf<UserProfile?> { null }
+
 @Composable
 fun WearWiseTopBar(
     title: String? = null,
@@ -91,6 +95,7 @@ fun WearWiseTopBar(
     onNotificationClick: () -> Unit = {}
 ) {
     val languageManager = LocalLanguageManager.current
+    val profile = LocalWearWiseProfile.current
     val currentLang = languageManager?.currentLanguage?.collectAsState()?.value ?: AppLanguage.ENGLISH
     val displayTitle = title ?: languageManager?.getString("app_title", currentLang) ?: "WEARWISE"
     val displaySubtitle = subtitle ?: languageManager?.getString("app_subtitle", currentLang) ?: "AI COUTURE"
@@ -165,16 +170,21 @@ fun WearWiseTopBar(
             }
 
             if (userAvatarRes != null) {
-                Image(
-                    painter = painterResource(id = userAvatarRes),
-                    contentDescription = "User Avatar",
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .size(42.dp)
-                        .clip(CircleShape)
-                        .border(1.5.dp, RoyalElectricViolet, CircleShape)
-                        .clickable(onClick = onAvatarClick)
-                )
+                if (!profile?.profileImage.isNullOrBlank()) {
+                    AsyncImage(
+                        model = profile?.profileImage,
+                        contentDescription = profile?.firstName,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.size(42.dp).clip(CircleShape)
+                            .border(1.5.dp, RoyalElectricViolet, CircleShape).clickable(onClick = onAvatarClick)
+                    )
+                } else {
+                    Box(
+                        Modifier.size(42.dp).clip(CircleShape).background(CardElevated)
+                            .border(1.5.dp, RoyalElectricViolet, CircleShape).clickable(onClick = onAvatarClick),
+                        contentAlignment = Alignment.Center
+                    ) { Icon(Icons.Default.Person, contentDescription = profile?.firstName ?: "Profile", tint = TextSecondary) }
+                }
             }
         }
     }
@@ -323,8 +333,8 @@ fun WearWiseCard(
 
 @Composable
 fun WearWiseProfileTile(
-    name: String = "Dr. Yared",
-    subtitle: String = "Cambridge Synced • Calibrating silhouette",
+    name: String = "",
+    subtitle: String = "",
     avatarRes: Int = WearWiseDrawables.UserAvatar,
     modifier: Modifier = Modifier
 ) {
@@ -333,15 +343,11 @@ fun WearWiseProfileTile(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Image(
-                painter = painterResource(id = avatarRes),
-                contentDescription = name,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .size(54.dp)
-                    .clip(CircleShape)
-                    .border(2.dp, RoyalElectricViolet, CircleShape)
-            )
+            Box(
+                Modifier.size(54.dp).clip(CircleShape).background(CardSelected)
+                    .border(2.dp, RoyalElectricViolet, CircleShape),
+                contentAlignment = Alignment.Center
+            ) { Icon(Icons.Default.Person, contentDescription = name.ifBlank { "Profile" }, tint = RoyalElectricViolet) }
             Spacer(modifier = Modifier.width(14.dp))
             Column {
                 Text(

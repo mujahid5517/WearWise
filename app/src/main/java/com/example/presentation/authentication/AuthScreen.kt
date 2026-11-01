@@ -340,8 +340,8 @@ fun CreateAccountScreen(
     onBack: () -> Unit,
     onSignIn: () -> Unit
 ) {
-    var firstName by remember { mutableStateOf("Yared") }
-    var email by remember { mutableStateOf("yared@institution.edu") }
+    var firstName by remember { mutableStateOf("") }
+    var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("••••••••••••") }
     var isPasswordVisible by remember { mutableStateOf(false) }
 

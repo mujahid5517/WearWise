@@ -91,32 +91,24 @@ fun OnboardingScreen(
     val totalSteps = 7
 
     // State bindings
-    var firstName by remember { mutableStateOf("Yared") }
-    var nickname by remember { mutableStateOf("Dr. Yared") }
-    var selectedAgeRange by remember { mutableStateOf("25-34") }
-    var selectedGender by remember { mutableStateOf("Male") }
+    var firstName by remember { mutableStateOf("") }
+    var nickname by remember { mutableStateOf("") }
+    var selectedAgeRange by remember { mutableStateOf("") }
+    var selectedGender by remember { mutableStateOf("") }
 
-    val selectedRoles = remember { mutableStateListOf("Lecturer / Academic", "Researcher") }
-    var formalityLevel by remember { mutableFloatStateOf(6f) }
-    val selectedEnvironments = remember { mutableStateListOf("Smart Casual", "Business Casual") }
+    val selectedRoles = remember { mutableStateListOf<String>() }
+    var formalityLevel by remember { mutableFloatStateOf(0f) }
+    val selectedEnvironments = remember { mutableStateListOf<String>() }
 
-    val selectedStyles = remember { mutableStateListOf("Smart Casual", "Minimalist", "Classic", "Modern Tech") }
+    val selectedStyles = remember { mutableStateListOf<String>() }
 
-    val favoriteColors = remember {
-        mutableStateListOf(
-            "Deep Navy", "Charcoal Grey", "Crisp White", "Olive Green", "Camel / Tan", "Black / Noir"
-        )
-    }
-    val avoidedColors = remember { mutableStateListOf("Neon Yellow", "Bright Hot Pink") }
+    val favoriteColors = remember { mutableStateListOf<String>() }
+    val avoidedColors = remember { mutableStateListOf<String>() }
 
-    val selectedOccasions = remember {
-        mutableStateListOf(
-            "Lectures & Teaching", "Research Lab & Colloquium", "Faculty & Board Meetings", "Weekend Outings", "Dining & Date Night"
-        )
-    }
+    val selectedOccasions = remember { mutableStateListOf<String>() }
 
-    var selectedSilhouette by remember { mutableStateOf("Athletic Lean") }
-    var selectedStature by remember { mutableStateOf("6'0\"-6'3\"") }
+    var selectedSilhouette by remember { mutableStateOf("") }
+    var selectedStature by remember { mutableStateOf("") }
 
     Column(
         modifier = Modifier
@@ -368,8 +360,8 @@ private fun Step1PersonalProfile(
         Spacer(modifier = Modifier.height(18.dp))
 
         WearWiseProfileTile(
-            name = "$firstName • Cambridge Synced",
-            subtitle = "Calibrating silhouette and climate engine"
+            name = firstName.ifBlank { "Your profile" },
+            subtitle = "Add personal style details when you're ready"
         )
 
         Spacer(modifier = Modifier.height(20.dp))
@@ -508,12 +500,12 @@ private fun Step1PersonalProfile(
                     Text("AUTO SYNC", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = CoutureEmerald)
                 }
                 Spacer(modifier = Modifier.height(8.dp))
-                Text("United States • Cambridge, MA", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = TextPrimary)
+                Text("No location added", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = TextSecondary)
                 Spacer(modifier = Modifier.height(4.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.WbSunny, contentDescription = null, tint = CoutureAmber, modifier = Modifier.size(14.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Hyper-local weather sync enabled • 58°F (14°C)", fontSize = 12.sp, color = TextSecondary)
+                    Text("Add a location to personalize weather suggestions", fontSize = 12.sp, color = TextSecondary)
                 }
             }
         }

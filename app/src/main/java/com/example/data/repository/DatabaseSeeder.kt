@@ -4,7 +4,6 @@ import com.example.data.local.AppDatabase
 import com.example.data.local.entity.ClothingItemEntity
 import com.example.data.local.entity.OutfitEntity
 import com.example.data.local.entity.OutfitItemEntity
-import com.example.data.local.entity.UserProfileEntity
 import com.example.data.local.entity.WeeklyScheduleEntity
 import com.example.presentation.common.WearWiseDrawables
 import kotlinx.coroutines.Dispatchers
@@ -21,32 +20,7 @@ object DatabaseSeeder {
     }
 
     private suspend fun seedInitialData(database: AppDatabase) {
-        // 1. Initial User Profile
-        val userProfile = UserProfileEntity(
-            id = 1L,
-            firstName = "Yared",
-            nickname = "Dr. Yared",
-            email = "yared@institution.edu",
-            ageRange = "25-34",
-            gender = "Male",
-            country = "United States",
-            region = "Cambridge, MA",
-            profession = "Lecturer & Researcher",
-            dressEnvironment = "Smart Casual to Business Casual",
-            stylePreferences = "Smart Casual,Minimalist,Classic,Modern Tech",
-            favoriteColors = "Deep Navy,Charcoal Grey,Crisp White,Olive Green,Camel / Tan,Black / Noir",
-            avoidedColors = "Neon Yellow,Bright Hot Pink",
-            commonOccasions = "Lectures & Teaching,Research Lab,Faculty Meetings,Weekend Outings,Conferences",
-            climate = "Cambridge Synced (58°F • 14°C)",
-            silhouetteArchetype = "Athletic Lean (40\" Chest, 31\" Waist, 183cm)",
-            profileImage = null,
-            profileImageRes = WearWiseDrawables.UserAvatar,
-            createdAt = System.currentTimeMillis(),
-            updatedAt = System.currentTimeMillis()
-        )
-        database.userProfileDao().insertOrUpdateProfile(userProfile)
-
-        // 2. Initial Digital Wardrobe (Google Stitch Academic Capsule)
+        // Initial wardrobe assets provide the app's first-run demo closet; account identity is never seeded.
         val items = listOf(
             ClothingItemEntity(
                 name = "White Oxford Cotton",

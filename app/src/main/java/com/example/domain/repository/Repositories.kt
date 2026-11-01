@@ -13,13 +13,38 @@ import com.example.domain.model.ShoppingAnalysis
 import com.example.domain.model.ShoppingChatMessage
 import com.example.domain.model.ShoppingItem
 import com.example.domain.model.ShoppingRecommendation
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.Flow
 
 interface UserRepository {
     fun getUserProfile(): Flow<UserProfile?>
     suspend fun saveUserProfile(profile: UserProfile)
     suspend fun resetLearnedPreferences()
+}
+
+data class AuthenticatedUser(
+    val uid: String,
+    val displayName: String?,
+    val email: String?,
+    val photoUrl: String?,
+    val emailVerified: Boolean
+)
+
+data class AuthenticationState(
+    val isReady: Boolean = false,
+    val user: AuthenticatedUser? = null
+)
+
+interface AuthenticationRepository {
+    val state: StateFlow<AuthenticationState>
+    suspend fun register(fullName: String, email: String, password: String): AuthenticatedUser
+    suspend fun signIn(email: String, password: String): AuthenticatedUser
+    suspend fun sendPasswordReset(email: String)
+    suspend fun updatePassword(currentPassword: String, newPassword: String)
+    suspend fun updateProfile(profile: UserProfile)
+    suspend fun updateProfilePhoto(localUri: String): String
+    suspend fun deleteAccount(password: String)
+    fun signOut()
 }
 
 interface WardrobeRepository {

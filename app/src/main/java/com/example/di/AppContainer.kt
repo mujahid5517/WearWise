@@ -5,6 +5,7 @@ import com.example.data.local.ApiKeyManager
 import com.example.data.local.AppDatabase
 import com.example.data.local.LanguageManager
 import com.example.data.local.ThemePreferences
+import com.example.data.auth.FirebaseAuthenticationRepository
 import com.example.data.repository.DatabaseSeeder
 import com.example.data.repository.OutfitRepositoryImpl
 import com.example.data.media.TryOnFileStore
@@ -15,7 +16,6 @@ import com.example.data.remote.tryon.TryOnCloudStore
 import com.example.data.remote.WardrobeCloudStore
 import com.example.data.remote.ShoppingCloudStore
 import com.example.data.repository.TryOnRepositoryImpl
-import com.example.data.repository.UserRepositoryImpl
 import com.example.data.repository.WardrobeRepositoryImpl
 import com.example.data.repository.OpenMeteoWeatherRepository
 import com.example.data.repository.ShoppingRepositoryImpl
@@ -24,6 +24,7 @@ import com.example.data.sync.SyncManager
 import com.example.domain.repository.OutfitRepository
 import com.example.domain.repository.TryOnRepository
 import com.example.domain.repository.UserRepository
+import com.example.domain.repository.AuthenticationRepository
 import com.example.domain.repository.WardrobeRepository
 import com.example.domain.repository.WeatherRepository
 import com.example.domain.repository.ShoppingRepository
@@ -47,6 +48,8 @@ class AppContainer(context: Context) {
     // Firebase Authentication & Cloud Firestore
     val auth: FirebaseAuth = FirebaseAuth.getInstance()
     val firestore: FirebaseFirestore = FirebaseFirestore.getInstance()
+    val authenticationRepository = FirebaseAuthenticationRepository(auth, firestore, FirebaseStorage.getInstance())
+    val authentication: AuthenticationRepository = authenticationRepository
 
     // Language & Localization
     val languageManager = LanguageManager(context)
@@ -66,7 +69,7 @@ class AppContainer(context: Context) {
 
     val apiKeyManager = ApiKeyManager(context)
 
-    val userRepository: UserRepository = UserRepositoryImpl(database)
+    val userRepository: UserRepository = authenticationRepository
     val wardrobeRepository: WardrobeRepository = WardrobeRepositoryImpl(
         database,
         syncManager,

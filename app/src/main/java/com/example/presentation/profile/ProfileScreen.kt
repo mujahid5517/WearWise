@@ -2,6 +2,8 @@ package com.example.presentation.profile
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.content.Intent
+import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -32,6 +34,12 @@ import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.LockReset
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Visibility
@@ -42,10 +50,13 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
+import androidx.compose.material3.Switch
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -71,8 +82,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import coil.compose.AsyncImage
 import com.example.data.local.ApiKeyManager
+import com.example.data.local.AppDatabase
+import com.example.data.mapper.toDomain
+import com.example.data.notification.OutfitReminderScheduler
 import com.example.data.local.AppThemeMode
 import com.example.domain.model.UserProfile
+import com.example.domain.repository.AuthenticationRepository
 import com.example.domain.usecase.UserProfileUseCase
 import com.example.presentation.common.WearWiseButton
 import com.example.presentation.common.WearWiseCard
@@ -99,7 +114,10 @@ import java.io.File
 
 class ProfileViewModel(
     private val userProfileUseCase: UserProfileUseCase,
-    private val apiKeyManager: ApiKeyManager
+    private val apiKeyManager: ApiKeyManager,
+    private val authenticationRepository: AuthenticationRepository,
+    private val database: AppDatabase,
+    private val appContext: Context
 ) : ViewModel() {
 
     private val _profile = MutableStateFlow<UserProfile?>(null)
@@ -116,6 +134,9 @@ class ProfileViewModel(
     private val _isTestSuccess = MutableStateFlow<Boolean?>(null)
     val isTestSuccess: StateFlow<Boolean?> = _isTestSuccess.asStateFlow()
 
+    private val _accountAction = MutableStateFlow(ProfileActionState())
+    val accountAction: StateFlow<ProfileActionState> = _accountAction.asStateFlow()
+
     init {
         loadProfile()
     }
@@ -130,10 +151,17 @@ class ProfileViewModel(
 
     fun updateProfilePhoto(uriString: String) {
         viewModelScope.launch {
-            val current = _profile.value ?: UserProfile()
-            val updated = current.copy(profileImage = uriString)
-            _profile.value = updated
-            userProfileUseCase.saveProfile(updated)
+            _accountAction.value = ProfileActionState(isLoading = true)
+            runCatching { authenticationRepository.updateProfilePhoto(uriString) }
+                .onSuccess { url ->
+                    val uid = authenticationRepository.state.value.user?.uid.orEmpty()
+                    _profile.value = _profile.value?.copy(
+                        profileImage = url,
+                        profileImagePath = "users/$uid/profile/avatar.jpg"
+                    )
+                    _accountAction.value = ProfileActionState(message = "Profile photo updated.")
+                }
+                .onFailure { _accountAction.value = ProfileActionState(error = it.localizedMessage ?: "Photo upload failed.") }
         }
     }
 
@@ -144,7 +172,7 @@ class ProfileViewModel(
             bitmap.compress(Bitmap.CompressFormat.JPEG, 90, fos)
             fos.flush()
             fos.close()
-            updateProfilePhoto(file.absolutePath)
+            updateProfilePhoto(android.net.Uri.fromFile(file).toString())
         }
     }
 
@@ -191,12 +219,64 @@ class ProfileViewModel(
             userProfileUseCase.resetPreferences()
         }
     }
+
+    fun saveProfile(profile: UserProfile) {
+        viewModelScope.launch {
+            _accountAction.value = ProfileActionState(isLoading = true)
+            runCatching { authenticationRepository.updateProfile(profile) }
+                .onSuccess { _accountAction.value = ProfileActionState(message = "Profile updated.") }
+                .onFailure { _accountAction.value = ProfileActionState(error = it.localizedMessage ?: "Profile update failed.") }
+        }
+    }
+
+    fun changePassword(currentPassword: String, password: String, onSuccess: () -> Unit) {
+        if (currentPassword.isBlank()) {
+            _accountAction.value = ProfileActionState(error = "Enter your current password.")
+            return
+        }
+        if (password.length < 8 || password.none(Char::isLetter) || password.none(Char::isDigit)) {
+            _accountAction.value = ProfileActionState(error = "Use at least 8 characters with letters and numbers.")
+            return
+        }
+        viewModelScope.launch {
+            _accountAction.value = ProfileActionState(isLoading = true)
+            runCatching { authenticationRepository.updatePassword(currentPassword, password) }
+                .onSuccess { _accountAction.value = ProfileActionState(message = "Password changed."); onSuccess() }
+                .onFailure { _accountAction.value = ProfileActionState(error = it.localizedMessage ?: "Password update failed.") }
+        }
+    }
+
+    fun deleteAccount(password: String, onSuccess: () -> Unit) {
+        viewModelScope.launch {
+            _accountAction.value = ProfileActionState(isLoading = true)
+            runCatching { authenticationRepository.deleteAccount(password) }
+                .onSuccess { _accountAction.value = ProfileActionState(); onSuccess() }
+                .onFailure { _accountAction.value = ProfileActionState(error = it.localizedMessage ?: "Account deletion failed.") }
+        }
+    }
+
+    fun clearAccountMessage() { _accountAction.value = ProfileActionState() }
+
+    fun setOutfitNotificationsEnabled(enabled: Boolean) {
+        appContext.getSharedPreferences(OutfitReminderScheduler.PREFERENCES_NAME, Context.MODE_PRIVATE)
+            .edit().putBoolean(OutfitReminderScheduler.KEY_OUTFIT_REMINDERS, enabled).apply()
+        viewModelScope.launch(Dispatchers.IO) {
+            val uid = authenticationRepository.state.value.user?.uid ?: return@launch
+            val scheduler = OutfitReminderScheduler(appContext)
+            database.weeklyScheduleDao().getAllForOwner(uid).map { it.toDomain() }.forEach { plan ->
+                if (enabled) scheduler.schedule(plan) else scheduler.cancel(plan.dateIso)
+            }
+        }
+    }
 }
+
+data class ProfileActionState(val isLoading: Boolean = false, val error: String? = null, val message: String? = null)
 
 @Composable
 fun ProfileScreen(
     viewModel: ProfileViewModel,
     themeMode: AppThemeMode,
+    emailVerified: Boolean,
     onThemeModeChanged: (AppThemeMode) -> Unit,
     onNavigateBack: () -> Unit,
     onSignOut: () -> Unit
@@ -207,10 +287,17 @@ fun ProfileScreen(
     val isTestingKey by viewModel.isTestingKey.collectAsState()
     val testMessage by viewModel.testMessage.collectAsState()
     val isTestSuccess by viewModel.isTestSuccess.collectAsState()
+    val accountAction by viewModel.accountAction.collectAsState()
 
     val profile = profileState ?: UserProfile()
 
     var showApiKeyDialog by remember { mutableStateOf(false) }
+    var showEditProfileDialog by remember { mutableStateOf(false) }
+    var showPasswordDialog by remember { mutableStateOf(false) }
+    var showDeleteAccountDialog by remember { mutableStateOf(false) }
+    var outfitNotificationsEnabled by remember(context) {
+        mutableStateOf(OutfitReminderScheduler.notificationsEnabled(context))
+    }
 
     // Avatar pickers
     val photoPickerLauncher = rememberLauncherForActivityResult(
@@ -252,7 +339,7 @@ fun ProfileScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp, vertical = 10.dp)
         ) {
-            // Curator Profile Card with Photo & Change Action
+            // Authenticated profile, observed from users/{uid} in Firestore.
             WearWiseCard(modifier = Modifier.fillMaxWidth()) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -273,12 +360,7 @@ fun ProfileScreen(
                                 modifier = Modifier.fillMaxSize()
                             )
                         } else {
-                            Image(
-                                painter = painterResource(id = WearWiseDrawables.UserAvatar),
-                                contentDescription = profile.firstName,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
-                            )
+                            Icon(Icons.Default.Person, contentDescription = "Profile photo not set", tint = TextSecondary, modifier = Modifier.align(Alignment.Center).size(34.dp))
                         }
                     }
 
@@ -287,25 +369,29 @@ fun ProfileScreen(
                     Column(modifier = Modifier.weight(1f)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                text = profile.nickname.ifEmpty { profile.firstName },
-                                fontSize = 18.sp,
+                                text = profile.firstName.ifBlank { "WEARWISE MEMBER" }.uppercase(),
+                                fontSize = 16.sp,
                                 fontWeight = FontWeight.ExtraBold,
-                                color = TextPrimary
+                                color = TextPrimary,
+                                maxLines = 1
                             )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(4.dp))
-                                    .background(Color(0x3310B981))
-                                    .padding(horizontal = 6.dp, vertical = 2.dp)
-                            ) {
-                                Text("VERIFIED", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = CoutureEmerald)
+                            if (emailVerified) {
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("VERIFIED", fontSize = 8.sp, fontWeight = FontWeight.Bold, color = CoutureEmerald)
                             }
                         }
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(text = profile.email, fontSize = 12.sp, color = TextSecondary)
                         Spacer(modifier = Modifier.height(4.dp))
-                        Text(text = "${profile.profession} • ${profile.region}", fontSize = 11.sp, color = CoutureAmber)
+                        Text(
+                            text = profile.stylePreferences.joinToString().ifBlank { "Personal style profile" },
+                            fontSize = 10.sp, color = CoutureAmber, maxLines = 1
+                        )
+                    }
+                    TextButton(onClick = { showEditProfileDialog = true }) {
+                        Icon(Icons.Default.Edit, contentDescription = null, tint = RoyalElectricViolet, modifier = Modifier.size(15.dp))
+                        Spacer(Modifier.width(3.dp))
+                        Text("Edit", color = RoyalElectricViolet, fontSize = 11.sp)
                     }
                 }
             }
@@ -343,6 +429,43 @@ fun ProfileScreen(
                         }
                     }
                 }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+            WearWiseCard(modifier = Modifier.fillMaxWidth()) {
+                Column {
+                    Text("Account Settings", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Notifications, null, tint = CoutureAmber, modifier = Modifier.size(19.dp))
+                            Spacer(Modifier.width(10.dp))
+                            Column {
+                                Text("Outfit reminders", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                Text("Scheduled planner notifications", color = TextSecondary, fontSize = 10.sp)
+                            }
+                        }
+                        Switch(checked = outfitNotificationsEnabled, onCheckedChange = { enabled ->
+                            outfitNotificationsEnabled = enabled
+                            viewModel.setOutfitNotificationsEnabled(enabled)
+                        })
+                    }
+                    ProfileActionRow(Icons.Default.LockReset, "Change Password") { showPasswordDialog = true }
+                    ProfileActionRow(Icons.Default.Notifications, "Notification Settings") {
+                        context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName))
+                    }
+                    ProfileActionRow(Icons.Default.Security, "Privacy & Security") {
+                        context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.parse("package:${context.packageName}")))
+                    }
+                    ProfileActionRow(Icons.Default.Delete, "Delete Account", danger = true) { showDeleteAccountDialog = true }
+                }
+            }
+
+            if (accountAction.error != null || accountAction.message != null) {
+                Text(
+                    accountAction.error ?: accountAction.message.orEmpty(),
+                    color = if (accountAction.error != null) MaterialTheme.colorScheme.error else CoutureEmerald,
+                    fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp)
+                )
             }
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -513,7 +636,7 @@ fun ProfileScreen(
             Button(
                 onClick = {
                     viewModel.resetPreferences()
-                    Toast.makeText(context, "Learned styling preferences reset to baseline.", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Personal style preferences cleared.", Toast.LENGTH_SHORT).show()
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = CardElevated),
                 shape = RoundedCornerShape(16.dp),
@@ -680,6 +803,124 @@ fun ProfileScreen(
             tonalElevation = 8.dp
         )
     }
+
+    if (showEditProfileDialog) {
+        var fullName by remember { mutableStateOf(profile.firstName) }
+        var gender by remember { mutableStateOf(profile.gender) }
+        var location by remember { mutableStateOf(profile.region) }
+        var styles by remember { mutableStateOf(profile.stylePreferences.joinToString(", ")) }
+        AlertDialog(
+            onDismissRequest = { showEditProfileDialog = false },
+            title = { Text("Edit Profile", color = TextPrimary, fontWeight = FontWeight.Bold) },
+            text = {
+                Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+                    Text("Update only the personal details you choose to share.", color = TextSecondary, fontSize = 12.sp)
+                    Spacer(Modifier.height(12.dp))
+                    ProfileEditField("Full name", fullName) { fullName = it }
+                    ProfileEditField("Gender (optional)", gender) { gender = it }
+                    ProfileEditField("Location (optional)", location) { location = it }
+                    ProfileEditField("Preferred styles (comma separated)", styles) { styles = it }
+                }
+            },
+            confirmButton = {
+                TextButton(enabled = !accountAction.isLoading, onClick = {
+                    viewModel.saveProfile(profile.copy(
+                        firstName = fullName.trim(), nickname = fullName.trim(), gender = gender.trim(),
+                        region = location.trim(), stylePreferences = styles.split(',').map(String::trim).filter(String::isNotEmpty)
+                    ))
+                    showEditProfileDialog = false
+                }) { Text(if (accountAction.isLoading) "Saving…" else "Save", color = RoyalElectricViolet) }
+            },
+            dismissButton = { TextButton(onClick = { showEditProfileDialog = false }) { Text("Cancel", color = TextSecondary) } },
+            containerColor = DarkNavyBg
+        )
+    }
+
+    if (showPasswordDialog) {
+        var currentPassword by remember { mutableStateOf("") }
+        var newPassword by remember { mutableStateOf("") }
+        var confirmPassword by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { showPasswordDialog = false; viewModel.clearAccountMessage() },
+            title = { Text("Change Password", color = TextPrimary, fontWeight = FontWeight.Bold) },
+            text = {
+                Column {
+                    PasswordEditField("Current password", currentPassword) { currentPassword = it }
+                    Spacer(Modifier.height(8.dp))
+                    PasswordEditField("New password", newPassword) { newPassword = it }
+                    Spacer(Modifier.height(8.dp))
+                    PasswordEditField("Confirm password", confirmPassword) { confirmPassword = it }
+                    if (accountAction.error != null) Text(accountAction.error.orEmpty(), color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                }
+            },
+            confirmButton = {
+                TextButton(enabled = !accountAction.isLoading, onClick = {
+                    if (newPassword != confirmPassword) {
+                        Toast.makeText(context, "Passwords do not match.", Toast.LENGTH_SHORT).show()
+                    } else viewModel.changePassword(currentPassword, newPassword) { showPasswordDialog = false }
+                }) { Text(if (accountAction.isLoading) "Updating…" else "Update", color = RoyalElectricViolet) }
+            },
+            dismissButton = { TextButton(onClick = { showPasswordDialog = false; viewModel.clearAccountMessage() }) { Text("Cancel", color = TextSecondary) } },
+            containerColor = DarkNavyBg
+        )
+    }
+
+    if (showDeleteAccountDialog) {
+        var password by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { showDeleteAccountDialog = false; viewModel.clearAccountMessage() },
+            title = { Text("Delete Account?", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold) },
+            text = {
+                Column {
+                    Text("This permanently deletes your WearWise account and its cloud data. Enter your password to confirm.", color = TextSecondary, fontSize = 13.sp)
+                    Spacer(Modifier.height(12.dp))
+                    PasswordEditField("Current password", password) { password = it }
+                    if (accountAction.error != null) Text(accountAction.error.orEmpty(), color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                }
+            },
+            confirmButton = {
+                TextButton(enabled = password.isNotBlank() && !accountAction.isLoading, onClick = {
+                    viewModel.deleteAccount(password) {
+                        showDeleteAccountDialog = false
+                        onSignOut()
+                    }
+                }) { Text(if (accountAction.isLoading) "Deleting…" else "Delete Account", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { showDeleteAccountDialog = false; viewModel.clearAccountMessage() }) { Text("Cancel", color = TextSecondary) } },
+            containerColor = DarkNavyBg
+        )
+    }
+}
+
+@Composable
+private fun ProfileActionRow(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, danger: Boolean = false, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable(onClick = onClick).padding(vertical = 12.dp, horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(icon, contentDescription = null, tint = if (danger) MaterialTheme.colorScheme.error else CoutureAmber, modifier = Modifier.size(19.dp))
+        Spacer(Modifier.width(10.dp))
+        Text(title, color = if (danger) MaterialTheme.colorScheme.error else TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+    }
+}
+
+@Composable
+private fun ProfileEditField(label: String, value: String, onValueChange: (String) -> Unit) {
+    OutlinedTextField(
+        value = value, onValueChange = onValueChange, label = { Text(label) }, singleLine = true,
+        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = TextPrimary, unfocusedTextColor = TextPrimary, focusedBorderColor = RoyalElectricViolet, unfocusedBorderColor = CardBorder),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+    )
+}
+
+@Composable
+private fun PasswordEditField(label: String, value: String, onValueChange: (String) -> Unit) {
+    OutlinedTextField(
+        value = value, onValueChange = onValueChange, label = { Text(label) }, singleLine = true,
+        visualTransformation = PasswordVisualTransformation(),
+        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = TextPrimary, unfocusedTextColor = TextPrimary, focusedBorderColor = RoyalElectricViolet, unfocusedBorderColor = CardBorder),
+        modifier = Modifier.fillMaxWidth()
+    )
 }
 
 @Composable

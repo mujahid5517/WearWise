@@ -6,9 +6,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -18,9 +20,12 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.example.di.AppContainer
+import com.example.domain.repository.AuthenticatedUser
 import com.example.presentation.authentication.FirebaseAccountScreen
+import com.example.presentation.authentication.AuthViewModel
 import com.example.presentation.authentication.WelcomeScreen
 import com.example.presentation.common.OfflineStatusBar
+import com.example.presentation.common.LocalWearWiseProfile
 import com.example.presentation.common.WearWiseBottomBar
 import com.example.presentation.home.HomeScreen
 import com.example.presentation.home.HomeViewModel
@@ -52,6 +57,20 @@ sealed class Screen(val route: String) {
 
 @Composable
 fun WearWiseApp(container: AppContainer) {
+    val authenticationState by container.authentication.state.collectAsState()
+    if (!authenticationState.isReady) {
+        Box(Modifier.fillMaxSize(), contentAlignment = androidx.compose.ui.Alignment.Center) {
+            CircularProgressIndicator(color = androidx.compose.material3.MaterialTheme.colorScheme.primary)
+        }
+        return
+    }
+    key(authenticationState.user?.uid ?: "signed-out") {
+        WearWiseNavigationGraph(container = container, authenticatedUser = authenticationState.user)
+    }
+}
+
+@Composable
+private fun WearWiseNavigationGraph(container: AppContainer, authenticatedUser: AuthenticatedUser?) {
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route ?: Screen.Outfits.route
@@ -61,6 +80,8 @@ fun WearWiseApp(container: AppContainer) {
     val isOnline by container.connectivityMonitor.isOnline.collectAsState()
     val syncState by container.syncManager.syncState.collectAsState()
     val themeMode by container.themePreferences.themeMode.collectAsState()
+    val activeProfile by container.userProfileUseCase.getProfile().collectAsState(initial = null)
+    val authViewModel = remember { AuthViewModel(container.authentication) }
 
     val mainDestinations = listOf(
         Screen.Outfits.route,
@@ -91,7 +112,7 @@ fun WearWiseApp(container: AppContainer) {
         PlannerViewModel(container.weeklyPlannerUseCase, container.manageWardrobeUseCase, container.outfitRepository, container.getWeatherUseCase, container.appContext)
     }
     val profileViewModel = remember {
-        ProfileViewModel(container.userProfileUseCase, container.apiKeyManager)
+        ProfileViewModel(container.userProfileUseCase, container.apiKeyManager, container.authentication, container.database, container.appContext)
     }
     val shoppingViewModel = remember {
         ShoppingViewModel(
@@ -104,7 +125,8 @@ fun WearWiseApp(container: AppContainer) {
 
     androidx.compose.runtime.CompositionLocalProvider(
         com.example.data.local.LocalAppLanguage provides currentLanguage,
-        com.example.data.local.LocalLanguageManager provides container.languageManager
+        com.example.data.local.LocalLanguageManager provides container.languageManager,
+        LocalWearWiseProfile provides activeProfile
     ) {
         Scaffold(
             containerColor = DarkNavyBg,
@@ -142,7 +164,7 @@ fun WearWiseApp(container: AppContainer) {
 
             NavHost(
                 navController = navController,
-                startDestination = if (container.auth.currentUser == null) Screen.Welcome.route else Screen.Outfits.route,
+                startDestination = if (authenticatedUser != null) Screen.Outfits.route else Screen.Welcome.route,
                 modifier = Modifier.fillMaxSize()
             ) {
                 composable(Screen.Welcome.route) {
@@ -158,9 +180,9 @@ fun WearWiseApp(container: AppContainer) {
 
                 composable(Screen.CreateAccount.route) {
                     FirebaseAccountScreen(
-                        auth = container.auth,
+                        viewModel = authViewModel,
                         signIn = false,
-                        onSuccess = { navController.navigate(Screen.Onboarding.route) { popUpTo(Screen.Welcome.route) } },
+                        onSuccess = { navController.navigate(Screen.Outfits.route) { popUpTo(Screen.Welcome.route) { inclusive = true } } },
                         onToggleMode = { navController.navigate(Screen.SignIn.route) },
                         onBack = { navController.popBackStack() }
                     )
@@ -168,7 +190,7 @@ fun WearWiseApp(container: AppContainer) {
 
                 composable(Screen.SignIn.route) {
                     FirebaseAccountScreen(
-                        auth = container.auth,
+                        viewModel = authViewModel,
                         signIn = true,
                         onSuccess = { navController.navigate(Screen.Outfits.route) { popUpTo(Screen.Welcome.route) { inclusive = true } } },
                         onToggleMode = { navController.navigate(Screen.CreateAccount.route) },
@@ -230,10 +252,11 @@ fun WearWiseApp(container: AppContainer) {
                     ProfileScreen(
                         viewModel = profileViewModel,
                         themeMode = themeMode,
+                        emailVerified = authenticatedUser?.emailVerified == true,
                         onThemeModeChanged = container.themePreferences::setThemeMode,
                         onNavigateBack = { navController.popBackStack() },
                         onSignOut = {
-                            container.auth.signOut()
+                            container.authentication.signOut()
                             navController.navigate(Screen.Welcome.route) {
                                 popUpTo(0) { inclusive = true }
                             }
@@ -251,3 +274,4 @@ fun WearWiseApp(container: AppContainer) {
         }
     }
 }
+
