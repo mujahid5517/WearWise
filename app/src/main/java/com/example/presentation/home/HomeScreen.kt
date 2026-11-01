@@ -354,7 +354,7 @@ fun HomeScreen(
                                 text = "${outfit.score}%",
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color.White
+                                color = TextPrimary
                             )
                             Text(
                                 text = "Match",
@@ -532,7 +532,7 @@ private fun DecomposedGarmentItem(
                     modifier = Modifier
                         .size(46.dp)
                         .clip(RoundedCornerShape(10.dp))
-                        .background(Color(0xFF1B2032))
+                        .background(CardElevated)
                 ) {
                     if (slot.imageRes != null) {
                         Image(
@@ -565,7 +565,7 @@ private fun DecomposedGarmentItem(
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(4.dp))
-                                .background(Color(0xFF22283A))
+                                .background(CardBorder)
                                 .padding(horizontal = 6.dp, vertical = 2.dp)
                         ) {
                             Text(

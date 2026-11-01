@@ -389,7 +389,7 @@ fun WardrobeScreen(
 private fun WardrobeClothingCard(item: ClothingItem, onClick: () -> Unit, onFavorite: () -> Unit) {
     val context = LocalContext.current
     Column(Modifier.clip(RoundedCornerShape(18.dp)).background(CardElevated).border(1.dp, CardBorder, RoundedCornerShape(18.dp)).clickable(onClick = onClick)) {
-        Box(Modifier.fillMaxWidth().height(175.dp).background(Color(0xFF141927))) {
+        Box(Modifier.fillMaxWidth().height(175.dp).background(CardElevated)) {
             val image = item.imageUri ?: item.imageUrl ?: item.imageRes ?: item.catalogAssetName?.let {
                 context.resources.getIdentifier(it, "drawable", context.packageName).takeIf { id -> id != 0 }
             }

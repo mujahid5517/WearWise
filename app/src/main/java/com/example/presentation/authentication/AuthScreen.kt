@@ -380,7 +380,7 @@ fun CreateAccountScreen(
         Box(
             modifier = Modifier
                 .clip(RoundedCornerShape(8.dp))
-                .background(Color(0xFF161A2B))
+                .background(CardElevated)
                 .padding(horizontal = 10.dp, vertical = 4.dp)
         ) {
             Text(

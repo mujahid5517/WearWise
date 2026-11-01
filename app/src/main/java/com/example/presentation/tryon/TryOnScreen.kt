@@ -463,7 +463,7 @@ private fun PhotoStepCard(
                     .fillMaxWidth()
                     .height(220.dp)
                     .clip(RoundedCornerShape(16.dp))
-                    .background(Color(0xFF1B2032))
+                    .background(CardElevated)
                     .clickable(enabled = userPhotoUri != null) {
                         userPhotoUri?.let(onPreview)
                     },
@@ -540,7 +540,7 @@ private fun ClothingStepCard(
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(20.dp))
-                            .background(if (selected) RoyalElectricViolet else Color(0xFF1B2032))
+                            .background(if (selected) RoyalElectricViolet else CardElevated)
                             .clickable { onCategory(cat) }
                             .padding(horizontal = 10.dp, vertical = 6.dp)
                     ) {
@@ -563,7 +563,7 @@ private fun ClothingStepCard(
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(12.dp))
-                                .background(Color(0xFF1B2032))
+                                .background(CardElevated)
                                 .border(1.dp, CardBorder, RoundedCornerShape(12.dp))
                                 .padding(8.dp)
                         ) {
@@ -611,7 +611,7 @@ private fun ClothingStepCard(
                                 .fillMaxWidth()
                                 .padding(vertical = 4.dp)
                                 .clip(RoundedCornerShape(12.dp))
-                                .background(Color(0xFF1B2032))
+                                .background(CardElevated)
                                 .clickable { onOutfit(outfit) }
                                 .padding(10.dp)
                         ) {
@@ -632,7 +632,7 @@ private fun ClothingStepCard(
                                         modifier = Modifier
                                             .weight(1f)
                                             .clip(RoundedCornerShape(12.dp))
-                                            .background(Color(0xFF1B2032))
+                                            .background(CardElevated)
                                             .clickable { onGarment(item) }
                                             .padding(6.dp)
                                     ) {
@@ -681,7 +681,7 @@ private fun StudioControlsCard(
                         modifier = Modifier
                             .weight(1f)
                             .clip(RoundedCornerShape(12.dp))
-                            .background(if (selected) RoyalElectricViolet else Color(0xFF1B2032))
+                            .background(if (selected) RoyalElectricViolet else CardElevated)
                             .clickable { onFit(fit) }
                             .padding(vertical = 8.dp),
                         contentAlignment = Alignment.Center
@@ -719,7 +719,7 @@ private fun ControlTile(label: String, value: String, modifier: Modifier, onClic
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(12.dp))
-            .background(Color(0xFF1B2032))
+            .background(CardElevated)
             .clickable(onClick = onClick)
             .padding(10.dp)
     ) {
@@ -752,7 +752,7 @@ private fun ResultCard(
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(12.dp))
-                            .background(if (selected) RoyalElectricViolet else Color(0xFF1B2032))
+                            .background(if (selected) RoyalElectricViolet else CardElevated)
                             .clickable { onMode(mode) }
                             .padding(horizontal = 10.dp, vertical = 6.dp)
                     ) {
@@ -843,7 +843,7 @@ private fun HistoryGrid(
                                 .fillMaxWidth()
                                 .height(150.dp)
                                 .clip(RoundedCornerShape(12.dp))
-                                .background(Color(0xFF1B2032))
+                                .background(CardElevated)
                         ) {
                             if (!item.generatedImagePath.isNullOrBlank()) {
                                 AsyncImage(
@@ -890,7 +890,7 @@ private fun ActionChip(
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(12.dp))
-            .background(Color(0xFF1B2032))
+            .background(CardElevated)
             .border(1.dp, CardBorder, RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
             .padding(vertical = 10.dp),

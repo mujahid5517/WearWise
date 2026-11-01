@@ -175,7 +175,7 @@ fun OnboardingScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(3.dp)
-                    .background(Color(0xFF1E2435))
+                    .background(CardElevated)
             ) {
                 Box(
                     modifier = Modifier
@@ -336,7 +336,7 @@ private fun Step1PersonalProfile(
         Box(
             modifier = Modifier
                 .clip(RoundedCornerShape(8.dp))
-                .background(Color(0xFF161A2B))
+                .background(CardElevated)
                 .padding(horizontal = 10.dp, vertical = 4.dp)
         ) {
             Text(
@@ -546,7 +546,7 @@ private fun Step2Lifestyle(
         Box(
             modifier = Modifier
                 .clip(RoundedCornerShape(8.dp))
-                .background(Color(0xFF161A2B))
+                .background(CardElevated)
                 .padding(horizontal = 10.dp, vertical = 4.dp)
         ) {
             Text("CONTEXT ENGINE", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = RoyalElectricViolet)
@@ -666,7 +666,7 @@ private fun Step3DressEnvironment(
         Box(
             modifier = Modifier
                 .clip(RoundedCornerShape(8.dp))
-                .background(Color(0xFF161A2B))
+                .background(CardElevated)
                 .padding(horizontal = 10.dp, vertical = 4.dp)
         ) {
             Text("CONTEXT INTELLIGENCE", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = RoyalElectricViolet)
@@ -752,7 +752,7 @@ private fun Step3DressEnvironment(
                             Box(
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(4.dp))
-                                    .background(Color(0xFF262A3D))
+                                    .background(CardSelected)
                                     .padding(horizontal = 6.dp, vertical = 2.dp)
                             ) {
                                 Text(lvl, fontSize = 9.sp, fontWeight = FontWeight.Bold, color = CoutureAmber)
@@ -801,7 +801,7 @@ private fun Step4SignatureStyle(
         Box(
             modifier = Modifier
                 .clip(RoundedCornerShape(8.dp))
-                .background(Color(0xFF161A2B))
+                .background(CardElevated)
                 .padding(horizontal = 10.dp, vertical = 4.dp)
         ) {
             Text("STYLE MATRIX", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = RoyalElectricViolet)
@@ -877,7 +877,7 @@ private fun Step4SignatureStyle(
                     modifier = Modifier
                         .size(42.dp)
                         .clip(CircleShape)
-                        .background(Color(0xFF1B2032)),
+                        .background(CardElevated),
                     contentAlignment = Alignment.Center
                 ) {
                     Text("94%", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = CoutureEmerald)
@@ -923,7 +923,7 @@ private fun Step5ColorPalette(
         Box(
             modifier = Modifier
                 .clip(RoundedCornerShape(8.dp))
-                .background(Color(0xFF161A2B))
+                .background(CardElevated)
                 .padding(horizontal = 10.dp, vertical = 4.dp)
         ) {
             Text("COLOR PALETTE", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = RoyalElectricViolet)
@@ -1041,7 +1041,7 @@ private fun Step6Occasions(
         Box(
             modifier = Modifier
                 .clip(RoundedCornerShape(8.dp))
-                .background(Color(0xFF161A2B))
+                .background(CardElevated)
                 .padding(horizontal = 10.dp, vertical = 4.dp)
         ) {
             Text("LIFESTYLE SCHEDULER", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = RoyalElectricViolet)
@@ -1117,7 +1117,7 @@ private fun Step7VirtualTwin(
         Box(
             modifier = Modifier
                 .clip(RoundedCornerShape(8.dp))
-                .background(Color(0xFF161A2B))
+                .background(CardElevated)
                 .padding(horizontal = 10.dp, vertical = 4.dp)
         ) {
             Text("3D CALIBRATION", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = RoyalElectricViolet)

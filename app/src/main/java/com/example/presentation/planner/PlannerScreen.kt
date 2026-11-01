@@ -96,6 +96,8 @@ import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import android.content.Context
+import android.location.Geocoder
+import android.location.LocationManager
 import android.widget.TimePicker
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyRow
@@ -115,12 +117,18 @@ import com.example.ui.theme.RoyalElectricViolet
 import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
+import com.example.ui.theme.WarningContainer
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.flow.combine
 import com.example.data.local.AppDatabase
 import java.time.DayOfWeek
@@ -412,7 +420,7 @@ private fun LegacyPlannerScreen(
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(8.dp))
-                    .background(Color(0xFF161A2B))
+                    .background(CardElevated)
                     .padding(horizontal = 10.dp, vertical = 4.dp)
             ) {
                 Text(
@@ -497,7 +505,7 @@ private fun LegacyPlannerScreen(
                             modifier = Modifier
                                 .size(44.dp)
                                 .clip(CircleShape)
-                                .background(Color(0xFF1B2032))
+                                .background(CardElevated)
                                 .border(2.dp, CoutureEmerald, CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
@@ -536,7 +544,7 @@ private fun LegacyPlannerScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(16.dp))
-                    .background(Color(0xFF231F17))
+                    .background(WarningContainer)
                     .border(1.dp, CoutureAmber.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
                     .padding(14.dp)
             ) {
@@ -680,12 +688,12 @@ private fun DayScheduleCard(
                         modifier = Modifier
                             .size(38.dp)
                             .clip(CircleShape)
-                            .background(if (item.isToday) RoyalElectricViolet else Color(0xFF1B2032)),
+                            .background(if (item.isToday) RoyalElectricViolet else CardElevated),
                         contentAlignment = Alignment.Center
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(item.dayOfWeek, fontSize = 8.sp, fontWeight = FontWeight.Bold, color = if (item.isToday) Color.White else TextMuted)
-                            Text("${item.dateDay}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            Text("${item.dateDay}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = if (item.isToday) Color.White else TextPrimary)
                         }
                     }
                     Spacer(modifier = Modifier.width(10.dp))
@@ -772,6 +780,7 @@ fun PlannerScreen(
     onUseInTryOn: (Outfit) -> Unit = {}
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val schedules by viewModel.schedules.collectAsState()
     val wardrobe by viewModel.wardrobeItems.collectAsState()
     val savedOutfits by viewModel.outfits.collectAsState()
@@ -801,6 +810,15 @@ fun PlannerScreen(
         val coarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
         if (fine || coarse) requestPlannerLocation(context, viewModel)
         else permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+    }
+    androidx.compose.runtime.LaunchedEffect(lifecycleOwner, location) {
+        val selectedLocation = location ?: return@LaunchedEffect
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (isActive) {
+                delay(30 * 60 * 1000L)
+                viewModel.refreshWeather(selectedLocation, force = false)
+            }
+        }
     }
     val weekStart = selectedDate.with(DayOfWeek.MONDAY)
     val days = (0L..6L).map { weekStart.plusDays(it) }
@@ -848,7 +866,7 @@ fun PlannerScreen(
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Text(date.dayOfWeek.name.take(3), color = if (isSelected) Color.White else TextSecondary, fontWeight = FontWeight.Bold, fontSize = 10.sp)
-                        Text(date.dayOfMonth.toString(), color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                        Text(date.dayOfMonth.toString(), color = if (isSelected) Color.White else TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                         Text(dayForecast?.highC?.let { "${it.toInt()}°" } ?: "—", color = if (isSelected) Color.White else TextSecondary, fontSize = 10.sp)
                         Text(if (isPlanned) "●" else "○", color = if (isPlanned) CoutureAmber else TextMuted, fontSize = 9.sp)
                     }
@@ -956,10 +974,36 @@ private fun dailyWeatherSummary(day: com.example.domain.model.DailyWeather): Str
 
 private fun requestPlannerLocation(context: Context, viewModel: PlannerViewModel) {
     val token = CancellationTokenSource()
+    val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+    val gpsEnabled = runCatching { locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER) }.getOrDefault(false)
+    val networkEnabled = runCatching { locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER) }.getOrDefault(false)
+    if (!gpsEnabled && !networkEnabled) {
+        Toast.makeText(context, "Location is turned off. Enable it or choose a city manually.", Toast.LENGTH_LONG).show()
+        token.cancel()
+        return
+    }
     LocationServices.getFusedLocationProviderClient(context).getCurrentLocation(Priority.PRIORITY_BALANCED_POWER_ACCURACY, token.token)
         .addOnSuccessListener { location ->
             if (location == null) Toast.makeText(context, "Could not get a location fix. Choose a city manually.", Toast.LENGTH_LONG).show()
-            else viewModel.useLocation(WeatherLocation("Current location", latitude = location.latitude, longitude = location.longitude))
+            else {
+                val geocoder = Geocoder(context, Locale.getDefault())
+                if (Geocoder.isPresent()) {
+                    java.util.concurrent.Executors.newSingleThreadExecutor().execute {
+                        val result = runCatching {
+                            @Suppress("DEPRECATION")
+                            geocoder.getFromLocation(location.latitude, location.longitude, 1)?.firstOrNull()
+                        }.getOrNull()
+                        val weatherLocation = WeatherLocation(
+                            name = result?.locality ?: result?.subAdminArea ?: result?.adminArea ?: "Current location",
+                            admin1 = result?.adminArea?.takeIf { it != result.locality }.orEmpty(),
+                            country = result?.countryName.orEmpty(),
+                            latitude = location.latitude,
+                            longitude = location.longitude
+                        )
+                        android.os.Handler(android.os.Looper.getMainLooper()).post { viewModel.useLocation(weatherLocation) }
+                    }
+                } else viewModel.useLocation(WeatherLocation("Current location", latitude = location.latitude, longitude = location.longitude))
+            }
         }
         .addOnFailureListener { Toast.makeText(context, "Location unavailable. Choose a city manually.", Toast.LENGTH_LONG).show() }
 }
@@ -997,12 +1041,12 @@ private fun WeatherDashboardCard(
                     }
                     Column(horizontalAlignment = Alignment.End) {
                         Text("Feels ${weather.feelsLikeC?.toInt() ?: "–"}°", color = TextSecondary, fontSize = 11.sp)
-                        Text("Rain ${weather.precipitationProbability?.let { "$it%" } ?: "–"}", color = TextSecondary, fontSize = 11.sp)
-                        Text("Wind ${weather.windKmh?.toInt() ?: "–"} km/h", color = TextSecondary, fontSize = 11.sp)
+                        Text("Humidity ${weather.humidityPercent?.let { "$it%" } ?: "–"}", color = TextSecondary, fontSize = 11.sp)
+                        Text("Wind ${weather.windKmh?.toInt()?.let { "$it km/h" } ?: "–"}", color = TextSecondary, fontSize = 11.sp)
                     }
                 }
                 weather.daily.firstOrNull()?.let { today ->
-                    Text("Today · high ${today.highC?.toInt() ?: "–"}° / low ${today.lowC?.toInt() ?: "–"}° · humidity ${weather.humidityPercent ?: "–"}%", color = TextSecondary, fontSize = 11.sp)
+                    Text("Today · high ${today.highC?.toInt() ?: "–"}° / low ${today.lowC?.toInt() ?: "–"}° · rainfall ${weather.precipitationMm?.let { "${it} mm" } ?: "–"} · rain chance ${weather.precipitationProbability?.let { "$it%" } ?: "–"}", color = TextSecondary, fontSize = 11.sp)
                 }
                 if (weather.hourly.isNotEmpty()) {
                     Spacer(Modifier.height(8.dp)); Text("HOURLY", color = TextSecondary, fontWeight = FontWeight.Bold, fontSize = 9.sp)
@@ -1012,6 +1056,7 @@ private fun WeatherDashboardCard(
                                 Text(hour.time.takeLast(5), color = TextMuted, fontSize = 9.sp)
                                 Text(weatherEmoji(hour.weatherCode), fontSize = 16.sp)
                                 Text("${hour.temperatureC?.toInt() ?: "–"}°", color = TextPrimary, fontSize = 10.sp)
+                                Text("${hour.precipitationProbability?.let { "$it%" } ?: "–"}", color = TextMuted, fontSize = 8.sp)
                             }
                         }
                     }
@@ -1020,13 +1065,14 @@ private fun WeatherDashboardCard(
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     items(weather.daily) { day ->
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(day.date.takeLast(5), color = TextMuted, fontSize = 9.sp)
+                            Text(runCatching { LocalDate.parse(day.date).format(DateTimeFormatter.ofPattern("EEE d", Locale.getDefault())) }.getOrDefault(day.date), color = TextMuted, fontSize = 9.sp)
                             Text(weatherEmoji(day.weatherCode), fontSize = 16.sp)
                             Text("${day.highC?.toInt() ?: "–"}° / ${day.lowC?.toInt() ?: "–"}°", color = TextPrimary, fontSize = 9.sp)
+                            Text("${day.precipitationProbability?.let { "$it%" } ?: "–"} rain", color = TextMuted, fontSize = 8.sp)
                         }
                     }
                 }
-                Text("Updated ${java.time.Instant.ofEpochMilli(weather.fetchedAtEpochMillis).atZone(java.time.ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("HH:mm"))} · Weather data: Open-Meteo (CC BY 4.0)", color = TextMuted, fontSize = 9.sp)
+                Text("Updated ${java.time.Instant.ofEpochMilli(weather.fetchedAtEpochMillis).atZone(java.time.ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("HH:mm"))} · Weather data by Open-Meteo.com", color = TextMuted, fontSize = 9.sp)
                 if (!error.isNullOrBlank()) Text(error, color = CoutureAmber, fontSize = 10.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     TextButton(onClick = onUseLocation) { Text("Use current location", fontSize = 10.sp) }
@@ -1038,12 +1084,14 @@ private fun WeatherDashboardCard(
 }
 
 private fun weatherEmoji(code: Int?): String = when (code) {
-    0, 1 -> "☀️"
-    2, 3 -> "☁️"
-    45, 48 -> "🌫️"
-    51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82, 95, 96, 99 -> "🌧️"
-    71, 73, 75, 77, 85, 86 -> "❄️"
-    else -> "🌤️"
+    0 -> "\u2600\uFE0F"
+    1, 2 -> "\uD83C\uDF24\uFE0F"
+    3 -> "\u2601\uFE0F"
+    45, 48 -> "\uD83C\uDF2B\uFE0F"
+    51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82 -> "\uD83C\uDF27\uFE0F"
+    71, 73, 75, 77, 85, 86 -> "\u2744\uFE0F"
+    95, 96, 99 -> "\u26C8\uFE0F"
+    else -> "\u2601\uFE0F"
 }
 
 @Composable

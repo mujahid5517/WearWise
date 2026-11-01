@@ -4,6 +4,7 @@ import android.content.Context
 import com.example.data.local.ApiKeyManager
 import com.example.data.local.AppDatabase
 import com.example.data.local.LanguageManager
+import com.example.data.local.ThemePreferences
 import com.example.data.repository.DatabaseSeeder
 import com.example.data.repository.OutfitRepositoryImpl
 import com.example.data.media.TryOnFileStore
@@ -49,6 +50,7 @@ class AppContainer(context: Context) {
 
     // Language & Localization
     val languageManager = LanguageManager(context)
+    val themePreferences = ThemePreferences(context)
 
     // Connectivity + Sync infrastructure
     val connectivityMonitor = ConnectivityMonitor(context)

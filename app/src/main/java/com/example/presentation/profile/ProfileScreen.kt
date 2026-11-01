@@ -44,6 +44,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -69,6 +71,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import coil.compose.AsyncImage
 import com.example.data.local.ApiKeyManager
+import com.example.data.local.AppThemeMode
 import com.example.domain.model.UserProfile
 import com.example.domain.usecase.UserProfileUseCase
 import com.example.presentation.common.WearWiseButton
@@ -79,6 +82,9 @@ import com.example.ui.theme.CardBorder
 import com.example.ui.theme.CardElevated
 import com.example.ui.theme.CoutureAmber
 import com.example.ui.theme.CoutureEmerald
+import com.example.ui.theme.CoutureRose
+import com.example.ui.theme.DangerContainer
+import com.example.ui.theme.DangerBorder
 import com.example.ui.theme.DarkNavyBg
 import com.example.ui.theme.RoyalElectricViolet
 import com.example.ui.theme.TextMuted
@@ -190,6 +196,8 @@ class ProfileViewModel(
 @Composable
 fun ProfileScreen(
     viewModel: ProfileViewModel,
+    themeMode: AppThemeMode,
+    onThemeModeChanged: (AppThemeMode) -> Unit,
     onNavigateBack: () -> Unit,
     onSignOut: () -> Unit
 ) {
@@ -255,7 +263,7 @@ fun ProfileScreen(
                             .size(72.dp)
                             .clip(CircleShape)
                             .border(2.dp, RoyalElectricViolet, CircleShape)
-                            .background(Color(0xFF1B2032))
+                            .background(CardElevated)
                     ) {
                         if (!profile.profileImage.isNullOrEmpty()) {
                             AsyncImage(
@@ -304,6 +312,41 @@ fun ProfileScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
+            Text("SETTINGS", fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, color = RoyalElectricViolet)
+            Spacer(modifier = Modifier.height(8.dp))
+            WearWiseCard(modifier = Modifier.fillMaxWidth()) {
+                Column {
+                    Text("Appearance", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                    Spacer(modifier = Modifier.height(3.dp))
+                    Text("Choose how WearWise looks on this device.", fontSize = 11.sp, color = TextSecondary)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    AppThemeMode.entries.forEach { mode ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable { onThemeModeChanged(mode) }
+                                .padding(horizontal = 4.dp, vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = themeMode == mode,
+                                onClick = { onThemeModeChanged(mode) },
+                                colors = RadioButtonDefaults.colors(selectedColor = RoyalElectricViolet)
+                            )
+                            Column {
+                                Text(mode.label, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                                if (mode == AppThemeMode.SYSTEM) {
+                                    Text("Follow your device setting", fontSize = 10.sp, color = TextSecondary)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
             // User Personal Photo for Virtual Try-On
             Text("PERSONAL VIRTUAL TRY-ON AVATAR", fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, color = CoutureAmber)
             Spacer(modifier = Modifier.height(8.dp))
@@ -325,15 +368,15 @@ fun ProfileScreen(
                     ) {
                         Button(
                             onClick = { cameraLauncher.launch(null) },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1B2032)),
+                            colors = ButtonDefaults.buttonColors(containerColor = CardElevated),
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier
                                 .weight(1f)
                                 .border(1.dp, CardBorder, RoundedCornerShape(12.dp))
                         ) {
-                            Icon(Icons.Default.CameraAlt, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                            Icon(Icons.Default.CameraAlt, contentDescription = null, tint = TextPrimary, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Camera", fontSize = 12.sp, color = Color.White)
+                            Text("Camera", fontSize = 12.sp, color = TextPrimary)
                         }
 
                         Button(
@@ -344,7 +387,7 @@ fun ProfileScreen(
                                     )
                                 )
                             },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1B2032)),
+                            colors = ButtonDefaults.buttonColors(containerColor = CardElevated),
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier
                                 .weight(1f)
@@ -437,7 +480,7 @@ fun ProfileScreen(
                                     viewModel.clearCustomApiKey()
                                     Toast.makeText(context, "Reverted to default AI key", Toast.LENGTH_SHORT).show()
                                 },
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1B2032)),
+                                colors = ButtonDefaults.buttonColors(containerColor = CardElevated),
                                 shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier.border(1.dp, CardBorder, RoundedCornerShape(12.dp))
                             ) {
@@ -490,15 +533,15 @@ fun ProfileScreen(
             // Sign Out
             Button(
                 onClick = onSignOut,
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF261217)),
+                colors = ButtonDefaults.buttonColors(containerColor = DangerContainer),
                 shape = RoundedCornerShape(16.dp),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(50.dp)
-                    .border(1.dp, Color(0xFF5C1B28), RoundedCornerShape(16.dp))
+                    .border(1.dp, DangerBorder, RoundedCornerShape(16.dp))
                     .testTag("sign_out_button")
             ) {
-                Text("Sign Out / Switch Identity", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFFF43F5E))
+                Text("Sign Out / Switch Identity", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = CoutureRose)
             }
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -583,14 +626,14 @@ fun ProfileScreen(
                         Button(
                             onClick = { viewModel.testApiKey(inputKey) },
                             enabled = inputKey.isNotBlank() && !isTestingKey,
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1B2032)),
+                            colors = ButtonDefaults.buttonColors(containerColor = CardElevated),
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.border(1.dp, CardBorder, RoundedCornerShape(10.dp))
                         ) {
                             if (isTestingKey) {
                                 CircularProgressIndicator(color = RoyalElectricViolet, modifier = Modifier.size(14.dp))
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text("Testing...", fontSize = 11.sp, color = Color.White)
+                                Text("Testing...", fontSize = 11.sp, color = TextPrimary)
                             } else {
                                 Text("Test Connection", fontSize = 11.sp, color = CoutureAmber)
                             }

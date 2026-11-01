@@ -202,7 +202,7 @@ private fun GarmentPickerRow(
                 modifier = Modifier
                     .size(54.dp)
                     .clip(RoundedCornerShape(10.dp))
-                    .background(Color(0xFF1B2032))
+                    .background(CardElevated)
             ) {
                 if (item.imageRes != null) {
                     Image(
@@ -237,7 +237,7 @@ private fun GarmentPickerRow(
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(4.dp))
-                            .background(Color(0xFF22283A))
+                            .background(CardBorder)
                             .padding(horizontal = 6.dp, vertical = 2.dp)
                     ) {
                         Text(

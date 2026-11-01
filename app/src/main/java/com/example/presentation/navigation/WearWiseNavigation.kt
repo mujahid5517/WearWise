@@ -60,6 +60,7 @@ fun WearWiseApp(container: AppContainer) {
     val currentLanguage by container.languageManager.currentLanguage.collectAsState()
     val isOnline by container.connectivityMonitor.isOnline.collectAsState()
     val syncState by container.syncManager.syncState.collectAsState()
+    val themeMode by container.themePreferences.themeMode.collectAsState()
 
     val mainDestinations = listOf(
         Screen.Outfits.route,
@@ -228,6 +229,8 @@ fun WearWiseApp(container: AppContainer) {
                 composable(Screen.Profile.route) {
                     ProfileScreen(
                         viewModel = profileViewModel,
+                        themeMode = themeMode,
+                        onThemeModeChanged = container.themePreferences::setThemeMode,
                         onNavigateBack = { navController.popBackStack() },
                         onSignOut = {
                             container.auth.signOut()

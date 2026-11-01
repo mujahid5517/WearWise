@@ -41,6 +41,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import com.example.data.local.AppLanguage
 import com.example.data.local.LocalLanguageManager
 import androidx.compose.ui.Alignment
@@ -51,12 +54,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.util.Log
 import coil.compose.AsyncImage
 import com.example.domain.model.ClothingItem
 import com.example.domain.model.Outfit
@@ -384,7 +389,7 @@ fun WearWiseClothingCard(
                     .fillMaxWidth()
                     .height(160.dp)
                     .clip(RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp))
-                    .background(Color(0xFF161A28))
+                    .background(CardElevated)
             ) {
                 if (item.imageRes != null) {
                     Image(
@@ -507,14 +512,7 @@ fun WearWiseOutfitCard(
                 .background(CardElevated)
                 .border(1.dp, CardBorder, RoundedCornerShape(24.dp))
         ) {
-            if (outfit.previewImageRes != null) {
-                Image(
-                    painter = painterResource(id = outfit.previewImageRes),
-                    contentDescription = outfit.title,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
-                )
-            }
+            OutfitHeroArtwork(outfit)
 
             // Dark vignette gradient overlay
             Box(
@@ -730,6 +728,93 @@ fun WearWiseOutfitCard(
     }
 }
 
+/** Shows the outfit's own preview, or composes one from images of its wardrobe pieces. */
+@Composable
+private fun OutfitHeroArtwork(outfit: Outfit) {
+    val context = LocalContext.current
+    val outfitImage = outfit.previewImageUri?.takeIf { it.isNotBlank() }
+        ?: outfit.previewImageRes?.takeIf { it > 0 }
+
+    Box(Modifier.fillMaxSize().background(CardElevated)) {
+        when {
+            outfitImage != null -> OutfitImageLayer(outfitImage, outfit.title, Modifier.fillMaxSize())
+            outfit.items.any { item ->
+                item.imageUri?.isNotBlank() == true || item.imageUrl?.isNotBlank() == true ||
+                    item.imageRes?.let { it > 0 } == true || item.catalogAssetName?.isNotBlank() == true
+            } -> {
+                val visibleItems = outfit.items.take(5)
+                Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                    visibleItems.forEach { item ->
+                        val image = item.imageUri?.takeIf { it.isNotBlank() }
+                            ?: item.imageUrl?.takeIf { it.isNotBlank() }
+                            ?: item.imageRes?.takeIf { it > 0 }
+                            ?: item.catalogAssetName?.let { assetName ->
+                                context.resources.getIdentifier(assetName, "drawable", context.packageName).takeIf { it != 0 }
+                            }
+                        Box(Modifier.weight(1f).fillMaxSize().background(CardElevated)) {
+                            if (image != null) OutfitImageLayer(image, item.name, Modifier.fillMaxSize())
+                            else OutfitImagePlaceholder(Modifier.fillMaxSize())
+                        }
+                    }
+                }
+            }
+            else -> OutfitImagePlaceholder(Modifier.fillMaxSize())
+        }
+    }
+}
+
+@Composable
+private fun OutfitImageLayer(model: Any, description: String, modifier: Modifier = Modifier) {
+    var loading by remember(model) { mutableStateOf(true) }
+    var failed by remember(model) { mutableStateOf(false) }
+    Box(modifier.background(CardElevated), contentAlignment = Alignment.Center) {
+        OutfitImagePlaceholder(Modifier.fillMaxSize())
+        if (!failed) {
+            AsyncImage(
+                model = model,
+                contentDescription = description,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+                onLoading = { loading = true },
+                onSuccess = { loading = false },
+                onError = { state ->
+                    loading = false
+                    failed = true
+                    val sourceType = when (model) {
+                        is Int -> "resource"
+                        else -> "image reference"
+                    }
+                    Log.w("WearWiseOutfitImage", "Outfit $sourceType failed to load (${state.result.throwable.javaClass.simpleName}).")
+                }
+            )
+        }
+        if (loading && !failed) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(34.dp),
+                color = CoutureAmber,
+                strokeWidth = 3.dp
+            )
+        }
+    }
+}
+
+@Composable
+private fun OutfitImagePlaceholder(modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier.background(
+            Brush.verticalGradient(listOf(CardSelected, CardElevated, DarkNavyBg))
+        ),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = Icons.Default.Checkroom,
+            contentDescription = "Outfit image unavailable",
+            tint = RoyalElectricViolet.copy(alpha = 0.8f),
+            modifier = Modifier.size(104.dp)
+        )
+    }
+}
+
 @Composable
 fun ResonanceGauge(
     value: String,
@@ -740,7 +825,7 @@ fun ResonanceGauge(
             modifier = Modifier
                 .size(54.dp)
                 .clip(CircleShape)
-                .background(Color(0xFF161B2C))
+                .background(CardElevated)
                 .border(2.dp, RoyalElectricViolet, CircleShape),
             contentAlignment = Alignment.Center
         ) {
@@ -748,7 +833,7 @@ fun ResonanceGauge(
                 text = value,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.ExtraBold,
-                color = Color.White
+                color = TextPrimary
             )
         }
         Spacer(modifier = Modifier.height(6.dp))
