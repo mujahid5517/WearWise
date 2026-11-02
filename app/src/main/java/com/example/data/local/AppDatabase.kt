@@ -14,6 +14,7 @@ import com.example.data.local.dao.UserProfileDao
 import com.example.data.local.dao.WeeklyScheduleDao
 import com.example.data.local.dao.WearHistoryDao
 import com.example.data.local.dao.ShoppingItemDao
+import com.example.data.local.dao.OutfitFeedbackDao
 import com.example.data.local.entity.ClothingItemEntity
 import com.example.data.local.entity.OutfitEntity
 import com.example.data.local.entity.OutfitItemEntity
@@ -23,6 +24,7 @@ import com.example.data.local.entity.UserProfileEntity
 import com.example.data.local.entity.WeeklyScheduleEntity
 import com.example.data.local.entity.WearHistoryEntity
 import com.example.data.local.entity.ShoppingItemEntity
+import com.example.data.local.entity.OutfitFeedbackEntity
 
 /**
  * Main Room database for WearWise.
@@ -41,9 +43,10 @@ import com.example.data.local.entity.ShoppingItemEntity
         WeeklyScheduleEntity::class,
         SyncQueueEntity::class,
         WearHistoryEntity::class,
-        ShoppingItemEntity::class
+        ShoppingItemEntity::class,
+        OutfitFeedbackEntity::class
     ],
-    version = 10,
+    version = 13,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -55,6 +58,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun wearHistoryDao(): WearHistoryDao
     abstract fun shoppingItemDao(): ShoppingItemDao
     abstract fun syncQueueDao(): SyncQueueDao
+    abstract fun outfitFeedbackDao(): OutfitFeedbackDao
 
     companion object {
         @Volatile
@@ -174,6 +178,32 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""CREATE TABLE IF NOT EXISTS outfit_feedback (
+                    feedbackId INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    ownerUid TEXT NOT NULL, outfitId INTEGER NOT NULL, rating INTEGER,
+                    reaction TEXT, comment TEXT NOT NULL, outfitTitle TEXT NOT NULL,
+                    occasion TEXT NOT NULL, style TEXT NOT NULL, colors TEXT NOT NULL,
+                    categories TEXT NOT NULL, itemNames TEXT NOT NULL,
+                    createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL, synced INTEGER NOT NULL DEFAULT 0)""".trimIndent())
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_outfit_feedback_ownerUid_outfitId ON outfit_feedback(ownerUid, outfitId)")
+            }
+        }
+
+        private val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE outfit_feedback ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        private val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE outfits ADD COLUMN colorCompatibilityExplanation TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE outfits ADD COLUMN occasionSuitability TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -189,6 +219,9 @@ abstract class AppDatabase : RoomDatabase() {
                     .addMigrations(MIGRATION_7_8)
                     .addMigrations(MIGRATION_8_9)
                     .addMigrations(MIGRATION_9_10)
+                    .addMigrations(MIGRATION_10_11)
+                    .addMigrations(MIGRATION_11_12)
+                    .addMigrations(MIGRATION_12_13)
                     .build()
                 INSTANCE = instance
                 instance

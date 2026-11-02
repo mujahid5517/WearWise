@@ -76,7 +76,9 @@ data class OutfitEntity(
     val thermalSyncScore: Int,
     val colorHarmonyScore: Int,
     val createdAt: Long,
-    val ownerUid: String = ""
+    val ownerUid: String = "",
+    @androidx.room.ColumnInfo(defaultValue = "''") val colorCompatibilityExplanation: String = "",
+    @androidx.room.ColumnInfo(defaultValue = "''") val occasionSuitability: String = ""
 )
 
 @Entity(tableName = "outfit_items", primaryKeys = ["outfitId", "clothingId"])
@@ -154,4 +156,24 @@ data class ShoppingItemEntity(
     val favorite: Boolean = false,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
+)
+
+@Entity(tableName = "outfit_feedback", indices = [androidx.room.Index(value = ["ownerUid", "outfitId"], unique = true)])
+data class OutfitFeedbackEntity(
+    @PrimaryKey(autoGenerate = true) val feedbackId: Long = 0L,
+    val ownerUid: String,
+    val outfitId: Long,
+    val rating: Int? = null,
+    val reaction: String? = null,
+    val comment: String = "",
+    val outfitTitle: String,
+    val occasion: String,
+    val style: String,
+    val colors: String,
+    val categories: String,
+    val itemNames: String,
+    val createdAt: Long,
+    val updatedAt: Long,
+    val synced: Boolean = false,
+    val deleted: Boolean = false
 )

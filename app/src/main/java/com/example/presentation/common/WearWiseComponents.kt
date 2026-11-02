@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -502,6 +503,9 @@ fun WearWiseOutfitCard(
     outfit: Outfit,
     onWearThis: () -> Unit = {},
     onTryAnother: () -> Unit = {},
+    isGeneratingPreview: Boolean = false,
+    previewError: String? = null,
+    onGeneratePreview: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -513,12 +517,12 @@ fun WearWiseOutfitCard(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(440.dp)
+                .aspectRatio(3f / 4f)
                 .clip(RoundedCornerShape(24.dp))
                 .background(CardElevated)
                 .border(1.dp, CardBorder, RoundedCornerShape(24.dp))
         ) {
-            OutfitHeroArtwork(outfit)
+            OutfitHeroArtwork(outfit, isGeneratingPreview, previewError, onGeneratePreview)
 
             // Dark vignette gradient overlay
             Box(
@@ -559,7 +563,7 @@ fun WearWiseOutfitCard(
                             .padding(horizontal = 8.dp, vertical = 3.dp)
                     ) {
                         Text(
-                            text = "Curated for Faculty",
+                            text = "AI VIRTUAL TRY-ON",
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
                             color = ObsidianBlack
@@ -661,6 +665,16 @@ fun WearWiseOutfitCard(
                     lineHeight = 19.sp,
                     color = TextSecondary
                 )
+                if (outfit.colorCompatibilityExplanation.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(7.dp))
+                    Text("COLOR COMPATIBILITY", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = CoutureAmber)
+                    Text(outfit.colorCompatibilityExplanation, fontSize = 12.sp, lineHeight = 17.sp, color = TextSecondary)
+                }
+                if (outfit.occasionSuitability.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(7.dp))
+                    Text("OCCASION FIT", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = CoutureAmber)
+                    Text(outfit.occasionSuitability, fontSize = 12.sp, lineHeight = 17.sp, color = TextSecondary)
+                }
             }
         }
 
@@ -734,37 +748,41 @@ fun WearWiseOutfitCard(
     }
 }
 
-/** Shows the outfit's own preview, or composes one from images of its wardrobe pieces. */
+/** Shows only an actual generated try-on image; individual garment images are never collaged here. */
 @Composable
-private fun OutfitHeroArtwork(outfit: Outfit) {
-    val context = LocalContext.current
+private fun OutfitHeroArtwork(
+    outfit: Outfit,
+    isGenerating: Boolean,
+    error: String?,
+    onGenerate: () -> Unit
+) {
     val outfitImage = outfit.previewImageUri?.takeIf { it.isNotBlank() }
-        ?: outfit.previewImageRes?.takeIf { it > 0 }
 
     Box(Modifier.fillMaxSize().background(CardElevated)) {
-        when {
-            outfitImage != null -> OutfitImageLayer(outfitImage, outfit.title, Modifier.fillMaxSize())
-            outfit.items.any { item ->
-                item.imageUri?.isNotBlank() == true || item.imageUrl?.isNotBlank() == true ||
-                    item.imageRes?.let { it > 0 } == true || item.catalogAssetName?.isNotBlank() == true
-            } -> {
-                val visibleItems = outfit.items.take(5)
-                Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                    visibleItems.forEach { item ->
-                        val image = item.imageUri?.takeIf { it.isNotBlank() }
-                            ?: item.imageUrl?.takeIf { it.isNotBlank() }
-                            ?: item.imageRes?.takeIf { it > 0 }
-                            ?: item.catalogAssetName?.let { assetName ->
-                                context.resources.getIdentifier(assetName, "drawable", context.packageName).takeIf { it != 0 }
-                            }
-                        Box(Modifier.weight(1f).fillMaxSize().background(CardElevated)) {
-                            if (image != null) OutfitImageLayer(image, item.name, Modifier.fillMaxSize())
-                            else OutfitImagePlaceholder(Modifier.fillMaxSize())
-                        }
+        if (outfitImage != null) {
+            OutfitImageLayer(outfitImage, "Full-body model wearing ${outfit.title}", Modifier.fillMaxSize())
+        } else {
+            OutfitImagePlaceholder(Modifier.fillMaxSize())
+            Column(
+                modifier = Modifier.align(Alignment.Center).padding(horizontal = 28.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                if (isGenerating) {
+                    CircularProgressIndicator(color = CoutureAmber, strokeWidth = 3.dp)
+                    Text("Creating your full-body try-on…", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
+                    Text("Using the selected photos from your wardrobe", color = TextSecondary, fontSize = 11.sp, textAlign = TextAlign.Center)
+                } else {
+                    Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = CoutureAmber, modifier = Modifier.size(34.dp))
+                    Text("Full-body outfit preview", color = TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
+                    if (!error.isNullOrBlank()) {
+                        Text(error, color = TextSecondary, fontSize = 11.sp, textAlign = TextAlign.Center, lineHeight = 15.sp)
+                    }
+                    Button(onClick = onGenerate, shape = RoundedCornerShape(20.dp), colors = ButtonDefaults.buttonColors(containerColor = CoutureAmber, contentColor = ObsidianBlack)) {
+                        Text(if (error.isNullOrBlank()) "GENERATE TRY-ON" else "TRY AGAIN", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
-            else -> OutfitImagePlaceholder(Modifier.fillMaxSize())
         }
     }
 }
@@ -780,7 +798,7 @@ private fun OutfitImageLayer(model: Any, description: String, modifier: Modifier
                 model = model,
                 contentDescription = description,
                 modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop,
+                contentScale = ContentScale.Fit,
                 onLoading = { loading = true },
                 onSuccess = { loading = false },
                 onError = { state ->

@@ -77,6 +77,22 @@ interface OutfitRepository {
     fun getWearHistory(): Flow<List<WearHistory>>
 }
 
+data class OutfitFeedback(
+    val feedbackId: Long = 0L, val outfitId: Long, val rating: Int? = null,
+    val reaction: String? = null, val comment: String = "", val outfitTitle: String,
+    val occasion: String, val style: String, val colors: String, val categories: String,
+    val itemNames: String, val createdAt: Long, val updatedAt: Long
+)
+
+interface OutfitFeedbackRepository {
+    fun observeFeedback(): Flow<List<OutfitFeedback>>
+    suspend fun getFeedback(outfit: com.example.domain.model.Outfit): OutfitFeedback?
+    suspend fun saveFeedback(outfit: com.example.domain.model.Outfit, rating: Int?, reaction: String?, comment: String)
+    suspend fun updateFeedback(feedback: OutfitFeedback)
+    suspend fun removeFeedback(outfitId: Long)
+    suspend fun preferenceSummary(): Map<String, List<Pair<String, Int>>>
+}
+
 interface WeatherRepository {
     suspend fun refresh(location: WeatherLocation, force: Boolean = false): WeatherForecast
     suspend fun cachedForecast(): WeatherForecast?
@@ -87,6 +103,8 @@ interface WeatherRepository {
 
 interface TryOnRepository {
     fun getAllTryOnPreviews(): Flow<List<TryOnPreview>>
+    suspend fun getCachedOutfitPreview(outfitKey: Long): String?
+    suspend fun generateOutfitPreview(outfit: Outfit, modelImageRes: Int): String
     suspend fun deleteTryOnPreview(id: Long)
     suspend fun setSavedLook(id: Long, saved: Boolean)
     suspend fun persistPersonPhoto(uri: String): String

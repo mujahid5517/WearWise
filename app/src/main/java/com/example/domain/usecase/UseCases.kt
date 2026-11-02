@@ -53,6 +53,12 @@ class ExecuteTryOnUseCase(
 ) {
     fun getHistory(): Flow<List<TryOnPreview>> = tryOnRepository.getAllTryOnPreviews()
 
+    suspend fun getCachedOutfitPreview(outfitKey: Long): String? =
+        tryOnRepository.getCachedOutfitPreview(outfitKey)
+
+    suspend fun generateOutfitPreview(outfit: Outfit, modelImageRes: Int): String =
+        tryOnRepository.generateOutfitPreview(outfit, modelImageRes)
+
     suspend fun deleteHistoryEntry(id: Long) = tryOnRepository.deleteTryOnPreview(id)
 
     suspend fun setSavedLook(id: Long, saved: Boolean) = tryOnRepository.setSavedLook(id, saved)

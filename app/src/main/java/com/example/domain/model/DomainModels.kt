@@ -85,8 +85,18 @@ data class Outfit(
     val thermalSyncScore: Int = 99,
     val colorHarmonyScore: Int = 98,
     val createdAt: Long = System.currentTimeMillis(),
-    val ownerUid: String = ""
+    val ownerUid: String = "",
+    val colorCompatibilityExplanation: String = "",
+    val occasionSuitability: String = "",
+    val isAiGenerated: Boolean = false
 )
+
+/** Stable Room key for a transient recommendation that has not been saved as an outfit yet. */
+fun Outfit.previewCacheKey(): Long {
+    val signature = if (id > 0L) "saved:$id" else
+        items.map { it.id }.filter { it > 0L }.sorted().joinToString("-").ifBlank { title }
+    return "$ownerUid:$signature".hashCode().toLong().and(Long.MAX_VALUE).coerceAtLeast(1L)
+}
 
 data class TryOnPreview(
     val id: Long = 0L,

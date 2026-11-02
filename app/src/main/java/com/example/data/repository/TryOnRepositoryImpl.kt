@@ -20,7 +20,10 @@ import com.example.data.sync.SyncManager
 import com.example.domain.model.SelectedTryOnGarment
 import com.example.domain.model.TryOnGenerationException
 import com.example.domain.model.TryOnPreview
+import com.example.domain.model.Outfit
+import com.example.domain.model.previewCacheKey
 import com.example.domain.repository.TryOnRepository
+import com.example.presentation.common.WearWiseDrawables
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -39,6 +42,73 @@ class TryOnRepositoryImpl(
     override fun getAllTryOnPreviews(): Flow<List<TryOnPreview>> {
         return database.tryOnPreviewDao().getAllTryOnPreviews().map { list ->
             list.map { it.toDomain() }
+        }
+    }
+
+    override suspend fun getCachedOutfitPreview(outfitKey: Long): String? = withContext(Dispatchers.IO) {
+        database.tryOnPreviewDao().getLatestCatalogImage(outfitKey)?.takeIf { java.io.File(it).isFile }
+    }
+
+    /** Generates and Room-caches a full-body catalog try-on using the selected wardrobe images. */
+    override suspend fun generateOutfitPreview(outfit: Outfit, modelImageRes: Int): String = withContext(Dispatchers.IO) {
+        if (outfit.items.isEmpty()) throw TryOnGenerationException.InvalidImage(
+            "Add clothing with photos to your wardrobe before creating a full-body look."
+        )
+        val modelImage = fileStore.encodeDrawable(modelImageRes)
+            ?: throw TryOnGenerationException.InvalidImage("The full-body model reference could not be loaded.")
+        try {
+            val garments = outfit.items.take(6).map { item ->
+                val selection = SelectedTryOnGarment(
+                    slot = item.category,
+                    name = item.name,
+                    category = item.category,
+                    imageRes = item.imageRes,
+                    imageUri = item.imageUri,
+                    clothingItemId = item.id,
+                    imageUrl = item.imageUrl,
+                    catalogAssetName = item.catalogAssetName
+                )
+                val image = encodeGarment(selection) ?: throw TryOnGenerationException.InvalidImage(
+                    "A usable photo is missing for ${item.name}. Add an image to that wardrobe item and try again."
+                )
+                selection to image
+            }
+            val summary = garments.joinToString("; ") { (garment, _) -> "${garment.category}: ${garment.name}" }
+            val bytes = imageProvider.generate(
+                apiKeyManager.getEffectiveApiKey(),
+                VirtualTryOnRequest(
+                    personImage = modelImage,
+                    clothingImages = garments.map { it.second },
+                    prompt = TryOnPromptBuilder.buildCatalogLook(summary, garments.size)
+                )
+            )
+            if (bytes.isEmpty()) throw TryOnGenerationException.NoImageReturned()
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+            TryOnImageValidator.validate("image/jpeg", bytes.size, bounds.outWidth, bounds.outHeight)
+                .getOrElse { throw TryOnGenerationException.InvalidImage(it.message ?: "The generated outfit image is invalid.") }
+            val generatedPath = fileStore.persistGeneratedBytes(bytes)
+            val cacheKey = outfit.previewCacheKey()
+            val entity = TryOnPreviewEntity(
+                outfitId = cacheKey,
+                userPhotoPath = null,
+                generatedImagePath = generatedPath,
+                previewImageRes = null,
+                harmonyScore = outfit.score,
+                fitType = "Catalog",
+                pose = "Full-body standing",
+                lighting = "Soft studio",
+                activePiecesCount = garments.size,
+                isSavedLook = false,
+                garmentSummary = summary,
+                createdAt = System.currentTimeMillis()
+            )
+            val id = database.tryOnPreviewDao().insertTryOnPreview(entity)
+            syncManager.enqueue("CREATE", "tryon", id)
+            runCatching { cloudStore?.upsertMetadata(entity.copy(id = id).toDomain()) }
+            generatedPath
+        } finally {
+            fileStore.deleteIfOwned(modelImage.localPath)
         }
     }
 

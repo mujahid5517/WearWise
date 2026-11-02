@@ -8,6 +8,7 @@ import com.example.data.local.ThemePreferences
 import com.example.data.auth.FirebaseAuthenticationRepository
 import com.example.data.repository.DatabaseSeeder
 import com.example.data.repository.OutfitRepositoryImpl
+import com.example.data.repository.OutfitFeedbackRepositoryImpl
 import com.example.data.media.TryOnFileStore
 import com.example.data.remote.tryon.CompositeVirtualTryOnProvider
 import com.example.data.remote.tryon.FirebaseAiVirtualTryOnProvider
@@ -37,6 +38,7 @@ import com.example.domain.usecase.GetWeatherUseCase
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.storage.FirebaseStorage
+import com.google.firebase.functions.FirebaseFunctions
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -77,7 +79,10 @@ class AppContainer(context: Context) {
         WardrobeCloudStore(auth, firestore, FirebaseStorage.getInstance()),
         connectivityMonitor.isOnline
     )
-    val outfitRepository: OutfitRepository = OutfitRepositoryImpl(database, syncManager, auth, apiKeyManager)
+    val outfitRepository: OutfitRepository = OutfitRepositoryImpl(
+        database, syncManager, auth, FirebaseFunctions.getInstance("africa-south1")
+    )
+    val outfitFeedbackRepository = OutfitFeedbackRepositoryImpl(database, auth, firestore, connectivityMonitor)
     val weatherRepository: WeatherRepository = OpenMeteoWeatherRepository(context)
     val shoppingCloudStore = ShoppingCloudStore(auth, firestore)
     val shoppingRepository: ShoppingRepository = ShoppingRepositoryImpl(

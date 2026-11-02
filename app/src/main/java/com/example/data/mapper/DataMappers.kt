@@ -183,7 +183,9 @@ fun OutfitEntity.toDomain(items: List<ClothingItem> = emptyList()): Outfit {
         thermalSyncScore = thermalSyncScore,
         colorHarmonyScore = colorHarmonyScore,
         createdAt = createdAt,
-        ownerUid = ownerUid
+        ownerUid = ownerUid,
+        colorCompatibilityExplanation = colorCompatibilityExplanation,
+        occasionSuitability = occasionSuitability
     )
 }
 
@@ -204,7 +206,9 @@ fun Outfit.toEntity(): OutfitEntity {
         thermalSyncScore = thermalSyncScore,
         colorHarmonyScore = colorHarmonyScore,
         createdAt = createdAt,
-        ownerUid = ownerUid
+        ownerUid = ownerUid,
+        colorCompatibilityExplanation = colorCompatibilityExplanation,
+        occasionSuitability = occasionSuitability
     )
 }
 
