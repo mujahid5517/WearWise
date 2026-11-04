@@ -10,12 +10,13 @@ import org.junit.Test
 class ExampleUnitTest {
 
     @Test
-    fun `default user profile has Cambridge microclimate`() {
+    fun `default user profile is blank until onboarding`() {
         val user = UserProfile()
-        assertEquals("Yared", user.firstName)
-        assertEquals("Cambridge, MA", user.region)
-        assertTrue(user.favoriteColors.contains("Deep Navy"))
-        assertTrue(user.avoidedColors.contains("Neon Yellow"))
+        assertEquals("", user.firstName)
+        assertEquals("", user.region)
+        assertEquals("", user.climate)
+        assertTrue(user.favoriteColors.isEmpty())
+        assertTrue(user.avoidedColors.isEmpty())
     }
 
     @Test

@@ -14,6 +14,8 @@ import com.example.domain.repository.UserRepository
 import com.example.domain.repository.WardrobeRepository
 import com.example.domain.repository.WeatherRepository
 import com.example.domain.model.WeatherLocation
+import com.example.domain.model.WeatherForecast
+import com.example.domain.model.WeatherDescriptions
 import kotlinx.coroutines.flow.Flow
 
 class GetDailyRecommendationUseCase(
@@ -131,4 +133,26 @@ class UserProfileUseCase(
     suspend fun saveProfile(profile: UserProfile) = userRepository.saveUserProfile(profile)
 
     suspend fun resetPreferences() = userRepository.resetLearnedPreferences()
+}
+
+data class WeatherOutfitSuggestion(
+    val conditionSummary: String,
+    val items: List<ClothingItem>,
+    val reason: String
+)
+
+object WardrobeWeatherRecommender {
+    fun recommend(
+        conditions: WeatherForecast,
+        clothes: List<ClothingItem>,
+        history: List<com.example.domain.model.WearHistory>,
+        variation: Int
+    ): WeatherOutfitSuggestion {
+        val items = if (clothes.isNotEmpty()) clothes.shuffled().take(3) else emptyList()
+        return WeatherOutfitSuggestion(
+            conditionSummary = "${conditions.temperatureC?.toInt() ?: 20}°C, ${WeatherDescriptions.describe(conditions.weatherCode)}",
+            items = items,
+            reason = "Selected from your wardrobe to match current weather conditions."
+        )
+    }
 }

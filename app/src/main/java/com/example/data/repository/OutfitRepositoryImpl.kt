@@ -18,6 +18,7 @@ import com.example.data.remote.GeminiClient
 import com.example.data.remote.GeminiContent
 import com.example.data.remote.GeminiGenerateContentRequest
 import com.example.data.remote.GeminiPart
+import com.example.data.remote.generateTextContent
 import com.example.presentation.common.WearWiseDrawables
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first

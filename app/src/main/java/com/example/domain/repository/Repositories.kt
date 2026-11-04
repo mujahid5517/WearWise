@@ -13,6 +13,7 @@ import com.example.domain.model.ShoppingAnalysis
 import com.example.domain.model.ShoppingChatMessage
 import com.example.domain.model.ShoppingItem
 import com.example.domain.model.ShoppingRecommendation
+import com.example.domain.model.Trip
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.Flow
 
@@ -132,4 +133,20 @@ interface ShoppingRepository {
     suspend fun addItem(item: ShoppingItem): Long
     suspend fun updateItem(item: ShoppingItem)
     suspend fun deleteItem(id: Long)
+}
+
+interface TripRepository {
+    fun observeAllTrips(): Flow<List<Trip>>
+    suspend fun getTripById(id: Long): Trip?
+    suspend fun createTrip(
+        destination: String,
+        departureDate: String,
+        returnDate: String,
+        weatherPreference: String,
+        occasion: String,
+        wardrobe: List<ClothingItem>,
+        profile: UserProfile?
+    ): Long
+    suspend fun updateTrip(trip: Trip)
+    suspend fun deleteTrip(id: Long)
 }

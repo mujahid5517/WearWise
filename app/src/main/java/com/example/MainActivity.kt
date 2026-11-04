@@ -14,25 +14,23 @@ import androidx.core.view.WindowCompat
 import com.example.di.AppContainer
 import com.example.presentation.navigation.WearWiseApp
 import com.example.ui.theme.WearWiseTheme
-import com.google.firebase.FirebaseApp
 
 class MainActivity : ComponentActivity() {
+    @Suppress("DEPRECATION")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
         val container = AppContainer(this)
 
-        // Firebase Authentication restores its persisted user session automatically.
-        try {
-            val firebaseApp = FirebaseApp.getInstance()
-            val firestore = container.firestore
-
+        // Cloud features are available when google-services.json is configured; local app features
+        // remain usable without Firebase configuration.
+        val firebaseApp = container.firebaseApp
+        if (firebaseApp != null) {
             Log.d("WearWiseFirebase", "Firebase initialized successfully")
             Log.d("WearWiseFirebase", "Project ID: ${firebaseApp.options.projectId}")
-            Log.d("WearWiseFirebase", "Firestore instance: $firestore")
-        } catch (e: Exception) {
-            Log.e("WearWiseFirebase", "Firebase initialization failed", e)
+        } else {
+            Log.w("WearWiseFirebase", "Firebase is not configured; continuing with local features")
         }
 
         setContent {
