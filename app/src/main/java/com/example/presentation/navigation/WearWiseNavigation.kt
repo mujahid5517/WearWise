@@ -192,7 +192,7 @@ private fun WearWiseNavigationGraph(container: AppContainer, authenticatedUser: 
 
                 composable(Screen.CreateAccount.route) {
                     FirebaseAccountScreen(
-                        viewModel = authViewModel,
+                        auth = container.auth,
                         signIn = false,
                         onSuccess = { navController.navigate(Screen.Outfits.route) { popUpTo(Screen.Welcome.route) { inclusive = true } } },
                         onToggleMode = { navController.navigate(Screen.SignIn.route) },
@@ -202,7 +202,7 @@ private fun WearWiseNavigationGraph(container: AppContainer, authenticatedUser: 
 
                 composable(Screen.SignIn.route) {
                     FirebaseAccountScreen(
-                        viewModel = authViewModel,
+                        auth = container.auth,
                         signIn = true,
                         onSuccess = { navController.navigate(Screen.Outfits.route) { popUpTo(Screen.Welcome.route) { inclusive = true } } },
                         onToggleMode = { navController.navigate(Screen.CreateAccount.route) },
@@ -283,7 +283,7 @@ private fun WearWiseNavigationGraph(container: AppContainer, authenticatedUser: 
                     )
                 }
                 composable(Screen.Feedback.route) {
-                    FeedbackScreen(feedbackViewModel, onBack = { navController.popBackStack() })
+                    FeedbackScreen(viewModel = feedbackViewModel, onNavigateToProfile = { navController.navigate(Screen.Profile.route) })
                 }
                 }
             }

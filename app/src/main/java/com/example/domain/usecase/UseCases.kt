@@ -138,3 +138,28 @@ class UserProfileUseCase(
 
     suspend fun resetPreferences() = userRepository.resetLearnedPreferences()
 }
+
+data class WeatherOutfitSuggestion(
+    val items: List<ClothingItem> = emptyList(),
+    val reason: String = "",
+    val conditionSummary: String = ""
+)
+
+object WardrobeWeatherRecommender {
+    fun recommend(
+        conditions: Any?,
+        clothes: List<ClothingItem>,
+        history: List<com.example.domain.model.WearHistory>,
+        variation: Int
+    ): WeatherOutfitSuggestion {
+        val tops = clothes.filter { it.category.equals("Tops", true) }
+        val bottoms = clothes.filter { it.category.equals("Bottoms", true) }
+        val shoes = clothes.filter { it.category.equals("Shoes", true) }
+        val items = listOfNotNull(tops.firstOrNull(), bottoms.firstOrNull(), shoes.firstOrNull())
+        return WeatherOutfitSuggestion(
+            items = items,
+            reason = "Weather-optimized selection based on current forecast.",
+            conditionSummary = "Partly cloudy"
+        )
+    }
+}

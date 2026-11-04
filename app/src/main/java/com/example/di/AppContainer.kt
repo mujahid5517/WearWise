@@ -9,6 +9,7 @@ import com.example.data.auth.FirebaseAuthenticationRepository
 import com.example.data.repository.DatabaseSeeder
 import com.example.data.repository.OutfitRepositoryImpl
 import com.example.data.repository.OutfitFeedbackRepositoryImpl
+import com.example.data.repository.UserRepositoryImpl
 import com.example.data.media.TryOnFileStore
 import com.example.data.remote.tryon.CompositeVirtualTryOnProvider
 import com.example.data.remote.tryon.FirebaseAiVirtualTryOnProvider
@@ -71,7 +72,7 @@ class AppContainer(context: Context) {
 
     val apiKeyManager = ApiKeyManager(context)
 
-    val userRepository: UserRepository = authenticationRepository
+    val userRepository: UserRepository = UserRepositoryImpl(database)
     val wardrobeRepository: WardrobeRepository = WardrobeRepositoryImpl(
         database,
         syncManager,

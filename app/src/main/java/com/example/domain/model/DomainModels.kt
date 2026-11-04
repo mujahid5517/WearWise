@@ -186,3 +186,73 @@ data class WeeklyScheduleItem(
     val wornAtEpochMillis: Long? = null,
     val ownerUid: String = ""
 )
+
+data class WearHistory(
+    val id: Long = 0L,
+    val outfitId: Long,
+    val outfitTitle: String,
+    val clothingItemIds: List<Long>,
+    val wornAtEpochMillis: Long,
+    val occasion: String
+)
+
+data class WeatherHourlyForecast(
+    val time: String = "",
+    val weatherCode: Int = 0,
+    val temperatureC: Int = 20,
+    val precipitationProbability: Int? = 10
+)
+
+data class WeatherDailyForecast(
+    val date: String = "",
+    val weatherCode: Int? = 0,
+    val highC: Int? = 20,
+    val lowC: Int? = 12,
+    val apparentHighC: Int? = 20,
+    val precipitationProbability: Int? = 10,
+    val maxWindKmh: Int? = 10
+)
+
+data class WeatherForecast(
+    val location: WeatherLocation = WeatherLocation(),
+    val temperatureC: Int? = 20,
+    val feelsLikeC: Int? = 20,
+    val weatherCode: Int = 0,
+    val precipitationProbability: Int? = 10,
+    val precipitationMm: Double = 0.0,
+    val humidityPercent: Int? = 50,
+    val windKmh: Int? = 10,
+    val fetchedAtEpochMillis: Long = System.currentTimeMillis(),
+    val daily: List<WeatherDailyForecast> = emptyList(),
+    val hourly: List<WeatherHourlyForecast> = emptyList()
+)
+
+data class WeatherLocation(
+    val latitude: Double = 0.0,
+    val longitude: Double = 0.0,
+    val name: String = "Current Location"
+) {
+    val displayName: String get() = name
+}
+
+object WeatherDescriptions {
+    fun describe(code: Int): String {
+        return when (code) {
+            0 -> "Clear sky"
+            1, 2, 3 -> "Partly cloudy"
+            45, 48 -> "Foggy"
+            51, 53, 55 -> "Drizzle"
+            61, 63, 65 -> "Rain"
+            71, 73, 75 -> "Snow"
+            80, 81, 82 -> "Rain showers"
+            95, 96, 99 -> "Thunderstorm"
+            else -> "Partly cloudy"
+        }
+    }
+}
+
+sealed class TryOnGenerationException(message: String, cause: Throwable? = null) : Exception(message, cause) {
+    class InvalidImage(message: String) : TryOnGenerationException(message)
+    class NoImageReturned(message: String) : TryOnGenerationException(message)
+    class ApiError(message: String, cause: Throwable? = null) : TryOnGenerationException(message, cause)
+}

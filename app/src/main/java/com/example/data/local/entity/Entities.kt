@@ -177,3 +177,14 @@ data class OutfitFeedbackEntity(
     val synced: Boolean = false,
     val deleted: Boolean = false
 )
+
+@Entity(tableName = "sync_queue")
+data class SyncQueueEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0L,
+    val operation: String,
+    val entityType: String,
+    val entityId: Long,
+    val attemptCount: Int = 0,
+    val lastAttemptAt: Long = 0L,
+    val createdAt: Long = System.currentTimeMillis()
+)

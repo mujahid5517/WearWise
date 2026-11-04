@@ -14,6 +14,7 @@ import com.example.data.local.entity.WeeklyScheduleEntity
 import com.example.data.local.entity.WearHistoryEntity
 import com.example.data.local.entity.ShoppingItemEntity
 import com.example.data.local.entity.OutfitFeedbackEntity
+import com.example.data.local.entity.SyncQueueEntity
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -202,4 +203,16 @@ interface OutfitFeedbackDao {
     suspend fun markDeleted(uid: String, outfitId: Long)
     @Query("DELETE FROM outfit_feedback WHERE feedbackId = :id")
     suspend fun purge(id: Long)
+}
+
+@Dao
+interface SyncQueueDao {
+    @Query("SELECT * FROM sync_queue ORDER BY createdAt ASC")
+    fun getAllPending(): Flow<List<SyncQueueEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(item: SyncQueueEntity): Long
+
+    @Query("DELETE FROM sync_queue WHERE id = :id")
+    suspend fun delete(id: Long)
 }

@@ -54,62 +54,55 @@ class TryOnRepositoryImpl(
         if (outfit.items.isEmpty()) throw TryOnGenerationException.InvalidImage(
             "Add clothing with photos to your wardrobe before creating a full-body look."
         )
-        val modelImage = fileStore.encodeDrawable(modelImageRes)
+        val modelImage = fileStore.encodeDrawable(context, modelImageRes)
             ?: throw TryOnGenerationException.InvalidImage("The full-body model reference could not be loaded.")
-        try {
-            val garments = outfit.items.take(6).map { item ->
-                val selection = SelectedTryOnGarment(
-                    slot = item.category,
-                    name = item.name,
-                    category = item.category,
-                    imageRes = item.imageRes,
-                    imageUri = item.imageUri,
-                    clothingItemId = item.id,
-                    imageUrl = item.imageUrl,
-                    catalogAssetName = item.catalogAssetName
-                )
-                val image = encodeGarment(selection) ?: throw TryOnGenerationException.InvalidImage(
-                    "A usable photo is missing for ${item.name}. Add an image to that wardrobe item and try again."
-                )
-                selection to image
-            }
-            val summary = garments.joinToString("; ") { (garment, _) -> "${garment.category}: ${garment.name}" }
-            val bytes = imageProvider.generate(
-                apiKeyManager.getEffectiveApiKey(),
-                VirtualTryOnRequest(
-                    personImage = modelImage,
-                    clothingImages = garments.map { it.second },
-                    prompt = TryOnPromptBuilder.buildCatalogLook(summary, garments.size)
-                )
+        val garments = outfit.items.take(6).map { item ->
+            SelectedTryOnGarment(
+                slot = item.category,
+                name = item.name,
+                category = item.category,
+                imageRes = item.imageRes,
+                imageUri = item.imageUri,
+                clothingItemId = item.id,
+                imageUrl = item.imageUrl,
+                catalogAssetName = item.catalogAssetName
             )
-            if (bytes.isEmpty()) throw TryOnGenerationException.NoImageReturned()
-            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-            TryOnImageValidator.validate("image/jpeg", bytes.size, bounds.outWidth, bounds.outHeight)
-                .getOrElse { throw TryOnGenerationException.InvalidImage(it.message ?: "The generated outfit image is invalid.") }
-            val generatedPath = fileStore.persistGeneratedBytes(bytes)
-            val cacheKey = outfit.previewCacheKey()
-            val entity = TryOnPreviewEntity(
-                outfitId = cacheKey,
-                userPhotoPath = null,
-                generatedImagePath = generatedPath,
-                previewImageRes = null,
-                harmonyScore = outfit.score,
+        }
+        val encodedGarments = garments.mapNotNull { encodeGarment(it) }
+        val summary = garments.joinToString("; ") { "${it.category}: ${it.name}" }
+        val bitmap = imageProvider.generateTryOn(
+            VirtualTryOnRequest(
+                personImage = modelImage,
+                garmentImages = encodedGarments,
+                garments = garments,
                 fitType = "Catalog",
                 pose = "Full-body standing",
                 lighting = "Soft studio",
-                activePiecesCount = garments.size,
-                isSavedLook = false,
-                garmentSummary = summary,
-                createdAt = System.currentTimeMillis()
+                apiKey = apiKeyManager.getEffectiveApiKey()
             )
-            val id = database.tryOnPreviewDao().insertTryOnPreview(entity)
-            syncManager.enqueue("CREATE", "tryon", id)
-            runCatching { cloudStore?.upsertMetadata(entity.copy(id = id).toDomain()) }
-            generatedPath
-        } finally {
-            fileStore.deleteIfOwned(modelImage.localPath)
-        }
+        )
+        val baos = java.io.ByteArrayOutputStream()
+        bitmap.compress(Bitmap.CompressFormat.JPEG, 90, baos)
+        val bytes = baos.toByteArray()
+        val generatedPath = fileStore.persistGeneratedBytes(bytes).getOrNull() ?: error("Failed to save image")
+        val entity = TryOnPreviewEntity(
+            outfitId = outfit.id,
+            userPhotoPath = null,
+            generatedImagePath = generatedPath,
+            previewImageRes = null,
+            harmonyScore = outfit.score,
+            fitType = "Catalog",
+            pose = "Full-body standing",
+            lighting = "Soft studio",
+            activePiecesCount = garments.size,
+            isSavedLook = false,
+            garmentSummary = summary,
+            createdAt = System.currentTimeMillis()
+        )
+        val id = database.tryOnPreviewDao().insertTryOnPreview(entity)
+        syncManager.enqueue("CREATE", "tryon", id)
+        runCatching { cloudStore?.upsertMetadata(entity.copy(id = id).toDomain()) }
+        generatedPath
     }
 
     override suspend fun deleteTryOnPreview(id: Long) {
@@ -187,37 +180,36 @@ class TryOnRepositoryImpl(
             throw wrapImageError(e)
         }
 
-        val clothingImages = garments.map { garment ->
-            encodeGarment(garment) ?: throw TryOnGenerationException.InvalidImage(
-                "Could not read the selected clothing image for ${garment.name}. Upload another photo or choose a wardrobe item with an image."
-            )
+        val clothingImages = garments.mapNotNull { garment ->
+            encodeGarment(garment)
         }
         val garmentsText = garments.joinToString("; ") { "${it.category}: ${it.name}" }
-        val prompt = TryOnPromptBuilder.build(
-            garmentsText,
+        val prompt = TryOnPromptBuilder.buildPrompt(
+            garments,
             fitType,
             pose,
-            lighting,
-            clothingImages.size
+            lighting
         )
 
-        val bytes = imageProvider.generate(
-            apiKey,
+        val bitmap = imageProvider.generateTryOn(
             VirtualTryOnRequest(
                 personImage = personImage,
-                clothingImages = clothingImages,
-                prompt = prompt
+                garmentImages = clothingImages,
+                garments = garments,
+                fitType = fitType,
+                pose = pose,
+                lighting = lighting,
+                apiKey = apiKey
             )
         )
-        if (bytes.isEmpty()) {
-            throw TryOnGenerationException.NoImageReturned()
+        if (!TryOnImageValidator.validate(bitmap)) {
+            throw TryOnGenerationException.NoImageReturned("Gemini returned an invalid image.")
         }
-        val generatedBounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, generatedBounds)
-        TryOnImageValidator.validate("image/jpeg", bytes.size, generatedBounds.outWidth, generatedBounds.outHeight)
-            .getOrElse { throw TryOnGenerationException.InvalidImage(it.message ?: "Gemini returned an invalid image.") }
+        val baos = java.io.ByteArrayOutputStream()
+        bitmap.compress(Bitmap.CompressFormat.JPEG, 90, baos)
+        val bytes = baos.toByteArray()
 
-        val generatedPath = fileStore.persistGeneratedBytes(bytes)
+        val generatedPath = fileStore.persistGeneratedBytes(bytes).getOrNull() ?: error("Failed to save image")
         val previewEntity = TryOnPreviewEntity(
             outfitId = outfitId,
             userPhotoPath = userPhotoUri,
@@ -266,7 +258,7 @@ class TryOnRepositoryImpl(
         val res = garment.imageRes ?: garment.catalogAssetName?.let {
             context.resources.getIdentifier(it, "drawable", context.packageName).takeIf { id -> id != 0 }
         } ?: return null
-        return fileStore.encodeDrawable(res)
+        return fileStore.encodeDrawable(context, res)
     }
 
     private fun wrapImageError(error: Throwable): TryOnGenerationException {

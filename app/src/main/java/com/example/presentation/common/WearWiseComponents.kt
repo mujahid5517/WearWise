@@ -988,3 +988,26 @@ fun WearWiseEmptyState(
         )
     }
 }
+
+@Composable
+fun OfflineStatusBar(
+    isOnline: Boolean,
+    syncState: com.example.data.sync.SyncState
+) {
+    if (!isOnline) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(CoutureAmber)
+                .padding(vertical = 4.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "Offline Mode — Working with cached wardrobe",
+                color = ObsidianBlack,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}

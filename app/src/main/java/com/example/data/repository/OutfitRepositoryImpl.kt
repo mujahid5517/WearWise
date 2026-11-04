@@ -99,10 +99,9 @@ class OutfitRepositoryImpl(
 
     override suspend fun generateWeatherRecommendation(weather: WeatherForecast, occasion: String): Outfit? {
         val today = "Current conditions: ${weather.temperatureC ?: "unknown"}°C, feels like ${weather.feelsLikeC ?: "unknown"}°C, ${WeatherDescriptions.describe(weather.weatherCode)}, rain chance ${weather.precipitationProbability ?: "unknown"}%, humidity ${weather.humidityPercent ?: "unknown"}%, wind ${weather.windKmh ?: "unknown"} km/h."
-        val forecast = weather.daily.take(4).joinToString("; ") { "${it.date}: ${WeatherDescriptions.describe(it.weatherCode)}, high ${it.highC}°C low ${it.lowC}°C, rain ${it.precipitationProbability}%" }
+        val forecast = weather.daily.take(4).joinToString("; ") { "${it.date}: ${WeatherDescriptions.describe(it.weatherCode ?: 0)}, high ${it.highC}°C low ${it.lowC}°C, rain ${it.precipitationProbability}%" }
         val weatherContext = "$today Forecast: $forecast"
         return generateAiOutfit(weatherContext, occasion)
-            ?: localWardrobeRecommendation(occasion, weatherContext)
     }
 
     private suspend fun generateAiOutfit(weatherContext: String, occasion: String): Outfit? {

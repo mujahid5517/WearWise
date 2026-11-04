@@ -80,6 +80,7 @@ import com.example.domain.repository.OutfitRepository
 import com.example.domain.usecase.ManageWardrobeUseCase
 import com.example.domain.model.WeeklyScheduleItem
 import com.example.domain.model.WeatherForecast
+import com.example.domain.model.WeatherDailyForecast
 import com.example.domain.model.WeatherLocation
 import com.example.domain.model.WeatherDescriptions
 import com.example.domain.model.WearHistory
@@ -866,8 +867,8 @@ fun PlannerScreen(
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Text(date.dayOfWeek.name.take(3), color = if (isSelected) Color.White else TextSecondary, fontWeight = FontWeight.Bold, fontSize = 10.sp)
-                        Text(date.dayOfMonth.toString(), color = if (isSelected) Color.White else TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                        Text(dayForecast?.highC?.let { "${it.toInt()}°" } ?: "—", color = if (isSelected) Color.White else TextSecondary, fontSize = 10.sp)
+                        Text(date.dayOfMonth.toString(), color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                        Text(dayForecast?.highC?.let { "$it°" } ?: "—", color = if (isSelected) Color.White else TextSecondary, fontSize = 10.sp)
                         Text(if (isPlanned) "●" else "○", color = if (isPlanned) CoutureAmber else TextMuted, fontSize = 9.sp)
                     }
                 }
@@ -876,7 +877,7 @@ fun PlannerScreen(
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Column {
                     Text(selectedDate.format(DateTimeFormatter.ofPattern("EEEE, d MMMM", Locale.getDefault())), color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                    Text(selectedForecast?.let { "${WeatherDescriptions.describe(it.weatherCode)} · high ${it.highC?.toInt() ?: "–"}° / low ${it.lowC?.toInt() ?: "–"}° · rain ${it.precipitationProbability ?: "–"}%" } ?: "No forecast available for this date", color = TextSecondary, fontSize = 11.sp)
+                    Text(selectedForecast?.let { "${WeatherDescriptions.describe(it.weatherCode ?: 0)} · high ${it.highC ?: "–"}° / low ${it.lowC ?: "–"}° · rain ${it.precipitationProbability ?: "–"}%" } ?: "No forecast available for this date", color = TextSecondary, fontSize = 11.sp)
                 }
                 IconButton(onClick = { initialItems = outfit?.items.orEmpty(); planDialog = true }) {
                     Icon(if (selectedPlan == null) Icons.Default.AutoAwesome else Icons.Default.Edit, "Add or edit outfit plan", tint = CoutureAmber)
@@ -969,8 +970,8 @@ fun PlannerScreen(
     if (cityDialog) CitySearchDialog(viewModel, onDismiss = { cityDialog = false }, onChoose = { city -> cityDialog = false; viewModel.useLocation(city) })
 }
 
-private fun dailyWeatherSummary(day: com.example.domain.model.DailyWeather): String =
-    "${WeatherDescriptions.describe(day.weatherCode)} · ${day.highC?.toInt() ?: "–"}° / ${day.lowC?.toInt() ?: "–"}° · rain ${day.precipitationProbability ?: "–"}%"
+private fun dailyWeatherSummary(day: WeatherDailyForecast): String =
+    "${WeatherDescriptions.describe(day.weatherCode ?: 0)} · ${day.highC ?: "–"}° / ${day.lowC ?: "–"}° · rain ${day.precipitationProbability ?: "–"}%"
 
 private fun requestPlannerLocation(context: Context, viewModel: PlannerViewModel) {
     val token = CancellationTokenSource()
@@ -983,27 +984,9 @@ private fun requestPlannerLocation(context: Context, viewModel: PlannerViewModel
         return
     }
     LocationServices.getFusedLocationProviderClient(context).getCurrentLocation(Priority.PRIORITY_BALANCED_POWER_ACCURACY, token.token)
-        .addOnSuccessListener { location ->
-            if (location == null) Toast.makeText(context, "Could not get a location fix. Choose a city manually.", Toast.LENGTH_LONG).show()
-            else {
-                val geocoder = Geocoder(context, Locale.getDefault())
-                if (Geocoder.isPresent()) {
-                    java.util.concurrent.Executors.newSingleThreadExecutor().execute {
-                        val result = runCatching {
-                            @Suppress("DEPRECATION")
-                            geocoder.getFromLocation(location.latitude, location.longitude, 1)?.firstOrNull()
-                        }.getOrNull()
-                        val weatherLocation = WeatherLocation(
-                            name = result?.locality ?: result?.subAdminArea ?: result?.adminArea ?: "Current location",
-                            admin1 = result?.adminArea?.takeIf { it != result.locality }.orEmpty(),
-                            country = result?.countryName.orEmpty(),
-                            latitude = location.latitude,
-                            longitude = location.longitude
-                        )
-                        android.os.Handler(android.os.Looper.getMainLooper()).post { viewModel.useLocation(weatherLocation) }
-                    }
-                } else viewModel.useLocation(WeatherLocation("Current location", latitude = location.latitude, longitude = location.longitude))
-            }
+        .addOnSuccessListener { loc ->
+            if (loc == null) Toast.makeText(context, "Could not get a location fix. Choose a city manually.", Toast.LENGTH_LONG).show()
+            else viewModel.useLocation(WeatherLocation(latitude = loc.latitude, longitude = loc.longitude, name = "Current location"))
         }
         .addOnFailureListener { Toast.makeText(context, "Location unavailable. Choose a city manually.", Toast.LENGTH_LONG).show() }
 }
