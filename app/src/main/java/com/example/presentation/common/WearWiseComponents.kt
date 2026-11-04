@@ -970,3 +970,19 @@ fun WearWiseEmptyState(
         )
     }
 }
+
+@Composable
+fun OfflineStatusBar(isOnline: Boolean, syncState: Any? = null) {
+    if (!isOnline) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color.Red.copy(alpha = 0.8f))
+                .padding(4.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text("Offline Mode", color = Color.White, fontSize = 12.sp)
+        }
+    }
+}
+

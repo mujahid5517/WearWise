@@ -5,7 +5,7 @@ import com.example.data.local.AppDatabase
 import com.example.data.mapper.toDomain
 import com.example.data.mapper.toEntity
 import com.example.data.media.TryOnFileStore
-import com.example.data.remote.CloudWardrobeRecord
+import com.example.data.remote. CloudWardrobeRecord
 import com.example.data.remote.WardrobeCloudStore
 import com.example.data.sync.SyncManager
 import com.example.domain.model.ClothingItem
@@ -133,7 +133,7 @@ class WardrobeRepositoryImpl(
         try {
             store.getAll().forEach { remote ->
                 val dao = database.clothingItemDao()
-                val local = dao.getClothingItemByRemoteId(remote.remoteId)?.toDomain()
+                val local = dao.getClothingItemByRemoteId(remote.remoteId.orEmpty())?.toDomain()
                 val localImage = local?.imageUri ?: downloadRemoteImage(remote)
                 val item = remote.toDomain(local).copy(imageUri = localImage)
                 if (local == null) dao.insertClothingItem(item.toEntity())
@@ -145,9 +145,9 @@ class WardrobeRepositoryImpl(
     }
 
     private suspend fun downloadRemoteImage(remote: CloudWardrobeRecord): String? {
-        val path = remote.imageStoragePath.takeIf { it.isNotBlank() } ?: return null
+        val path = remote.imageStoragePath?.takeIf { it.isNotBlank() } ?: return null
         val store = fileStore ?: return null
-        val destination = java.io.File(store.storageDirectory(), "wardrobe_${remote.remoteId}.jpg")
+        val destination = java.io.File(store.storageDirectory(), "wardrobe_${remote.remoteId.orEmpty()}.jpg")
         return runCatching {
             cloudStore?.downloadImage(path, destination) ?: return null
             destination.absolutePath

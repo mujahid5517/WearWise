@@ -23,6 +23,14 @@ data class UserProfileEntity(
     val silhouetteArchetype: String,
     val profileImage: String?,
     val profileImageRes: Int?,
+    val colorSeason: String = "",
+    val skinUndertone: String = "",
+    val hairColorAnalyzed: String = "",
+    val eyeColorAnalyzed: String = "",
+    val recommendedColors: String = "",
+    val colorsToAvoid: String = "",
+    val colorAnalysisRationale: String = "",
+    val colorAnalysisPhotoPath: String? = null,
     val createdAt: Long,
     val updatedAt: Long
 )
@@ -154,4 +162,18 @@ data class ShoppingItemEntity(
     val favorite: Boolean = false,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
+)
+
+@Entity(tableName = "trips")
+data class TripEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0L,
+    val destination: String,
+    val departureDate: String,
+    val returnDate: String,
+    val weatherPreference: String,
+    val occasion: String,
+    val packingListJson: String,
+    val itineraryJson: String,
+    val ownerUid: String = "",
+    val createdAt: Long = System.currentTimeMillis()
 )

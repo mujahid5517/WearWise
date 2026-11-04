@@ -23,6 +23,8 @@ import com.example.data.local.entity.UserProfileEntity
 import com.example.data.local.entity.WeeklyScheduleEntity
 import com.example.data.local.entity.WearHistoryEntity
 import com.example.data.local.entity.ShoppingItemEntity
+import com.example.data.local.entity.TripEntity
+import com.example.data.local.dao.TripDao
 
 /**
  * Main Room database for WearWise.
@@ -41,9 +43,10 @@ import com.example.data.local.entity.ShoppingItemEntity
         WeeklyScheduleEntity::class,
         SyncQueueEntity::class,
         WearHistoryEntity::class,
-        ShoppingItemEntity::class
+        ShoppingItemEntity::class,
+        TripEntity::class
     ],
-    version = 10,
+    version = 12,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -55,6 +58,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun wearHistoryDao(): WearHistoryDao
     abstract fun shoppingItemDao(): ShoppingItemDao
     abstract fun syncQueueDao(): SyncQueueDao
+    abstract fun tripDao(): TripDao
 
     companion object {
         @Volatile
@@ -174,6 +178,36 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE user_profiles ADD COLUMN colorSeason TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE user_profiles ADD COLUMN skinUndertone TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE user_profiles ADD COLUMN hairColorAnalyzed TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE user_profiles ADD COLUMN eyeColorAnalyzed TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE user_profiles ADD COLUMN recommendedColors TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE user_profiles ADD COLUMN colorsToAvoid TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE user_profiles ADD COLUMN colorAnalysisRationale TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE user_profiles ADD COLUMN colorAnalysisPhotoPath TEXT")
+            }
+        }
+
+        private val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""CREATE TABLE IF NOT EXISTS trips (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    destination TEXT NOT NULL,
+                    departureDate TEXT NOT NULL,
+                    returnDate TEXT NOT NULL,
+                    weatherPreference TEXT NOT NULL,
+                    occasion TEXT NOT NULL,
+                    packingListJson TEXT NOT NULL,
+                    itineraryJson TEXT NOT NULL,
+                    ownerUid TEXT NOT NULL DEFAULT '',
+                    createdAt INTEGER NOT NULL
+                )""".trimIndent())
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -189,6 +223,8 @@ abstract class AppDatabase : RoomDatabase() {
                     .addMigrations(MIGRATION_7_8)
                     .addMigrations(MIGRATION_8_9)
                     .addMigrations(MIGRATION_9_10)
+                    .addMigrations(MIGRATION_10_11)
+                    .addMigrations(MIGRATION_11_12)
                     .build()
                 INSTANCE = instance
                 instance

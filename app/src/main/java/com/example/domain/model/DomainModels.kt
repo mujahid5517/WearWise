@@ -20,8 +20,31 @@ data class UserProfile(
     val profileImage: String? = null,
     val profileImagePath: String? = null,
     val profileImageRes: Int? = null,
+    val colorSeason: String = "",
+    val skinUndertone: String = "",
+    val hairColorAnalyzed: String = "",
+    val eyeColorAnalyzed: String = "",
+    val recommendedColors: List<String> = emptyList(),
+    val colorsToAvoid: List<String> = emptyList(),
+    val colorAnalysisRationale: String = "",
+    val colorAnalysisPhotoPath: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
+)
+
+data class ColorSwatch(
+    val name: String,
+    val hex: String
+)
+
+data class ColorAnalysisResult(
+    val season: String,
+    val undertone: String,
+    val hairColor: String,
+    val eyeColor: String,
+    val recommendedColors: List<ColorSwatch>,
+    val colorsToAvoid: List<ColorSwatch>,
+    val rationale: String
 )
 
 data class ClothingItem(
@@ -176,3 +199,98 @@ data class WeeklyScheduleItem(
     val wornAtEpochMillis: Long? = null,
     val ownerUid: String = ""
 )
+
+data class WearHistory(
+    val id: Long = 0L,
+    val outfitId: Long = 0L,
+    val outfitTitle: String = "",
+    val clothingItemIds: List<Long> = emptyList(),
+    val wornAtEpochMillis: Long = System.currentTimeMillis(),
+    val occasion: String = "",
+    val ownerUid: String = ""
+)
+
+data class WeatherLocation(
+    val displayName: String,
+    val latitude: Double,
+    val longitude: Double,
+    val name: String = displayName,
+    val admin1: String = "",
+    val country: String = ""
+)
+
+data class DailyWeather(
+    val date: String,
+    val highC: Double? = null,
+    val lowC: Double? = null,
+    val apparentHighC: Double? = null,
+    val precipitationProbability: Int? = null,
+    val maxWindKmh: Double? = null,
+    val weatherCode: Int? = null
+)
+
+data class HourlyWeather(
+    val time: String,
+    val weatherCode: Int? = null,
+    val temperatureC: Double? = null,
+    val precipitationProbability: Int? = null
+)
+
+data class WeatherForecast(
+    val location: WeatherLocation? = null,
+    val temperatureC: Double? = null,
+    val feelsLikeC: Double? = null,
+    val precipitationProbability: Int? = null,
+    val precipitationMm: Double? = null,
+    val windKmh: Double? = null,
+    val weatherCode: Int? = null,
+    val humidityPercent: Int? = null,
+    val fetchedAtEpochMillis: Long = System.currentTimeMillis(),
+    val daily: List<DailyWeather> = emptyList(),
+    val hourly: List<HourlyWeather> = emptyList()
+)
+
+data class TripPackingItem(
+    val id: String = java.util.UUID.randomUUID().toString(),
+    val category: String,
+    val itemName: String,
+    val isPacked: Boolean = false,
+    val clothingItemId: Long? = null
+)
+
+data class TripDayOutfit(
+    val dayNumber: Int,
+    val dateStr: String,
+    val outfitTitle: String,
+    val rationale: String,
+    val clothingItemNames: List<String>
+)
+
+data class Trip(
+    val id: Long = 0L,
+    val destination: String,
+    val departureDate: String,
+    val returnDate: String,
+    val weatherPreference: String,
+    val occasion: String,
+    val packingList: List<TripPackingItem> = emptyList(),
+    val itinerary: List<TripDayOutfit> = emptyList(),
+    val ownerUid: String = "",
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+object WeatherDescriptions {
+    fun describe(code: Int?): String {
+        return when (code) {
+            0 -> "Clear sky"
+            1, 2, 3 -> "Partly cloudy"
+            45, 48 -> "Foggy"
+            51, 53, 55, 56, 57 -> "Drizzle"
+            61, 63, 65, 66, 67 -> "Rain"
+            71, 73, 75, 77 -> "Snow"
+            80, 81, 82 -> "Rain showers"
+            95, 96, 99 -> "Thunderstorm"
+            else -> "Fair"
+        }
+    }
+}

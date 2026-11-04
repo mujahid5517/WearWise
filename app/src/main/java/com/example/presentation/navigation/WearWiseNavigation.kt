@@ -15,10 +15,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.example.di.AppContainer
 import com.example.domain.repository.AuthenticatedUser
 import com.example.presentation.authentication.FirebaseAccountScreen
@@ -40,6 +42,14 @@ import com.example.presentation.tryon.TryOnScreen
 import com.example.presentation.tryon.TryOnViewModel
 import com.example.presentation.wardrobe.WardrobeScreen
 import com.example.presentation.wardrobe.WardrobeViewModel
+import com.example.presentation.coloranalysis.ColorAnalysisScreen
+import com.example.presentation.coloranalysis.ColorAnalysisViewModel
+import com.example.presentation.trips.CreateTripScreen
+import com.example.presentation.trips.CreateTripViewModel
+import com.example.presentation.trips.TripDetailScreen
+import com.example.presentation.trips.TripDetailViewModel
+import com.example.presentation.trips.TripsScreen
+import com.example.presentation.trips.TripsViewModel
 import com.example.ui.theme.DarkNavyBg
 
 sealed class Screen(val route: String) {
@@ -53,6 +63,12 @@ sealed class Screen(val route: String) {
     data object Planner : Screen("planner")
     data object Profile : Screen("profile")
     data object Shopping : Screen("shopping")
+    data object ColorAnalysis : Screen("color_analysis")
+    data object Trips : Screen("trips")
+    data object CreateTrip : Screen("create_trip")
+    data object TripDetail : Screen("trip_detail/{tripId}") {
+        fun createRoute(tripId: Long) = "trip_detail/$tripId"
+    }
 }
 
 @Composable
@@ -120,6 +136,14 @@ private fun WearWiseNavigationGraph(container: AppContainer, authenticatedUser: 
             container.manageWardrobeUseCase,
             container.userProfileUseCase,
             container.getWeatherUseCase
+        )
+    }
+    val colorAnalysisViewModel = remember {
+        ColorAnalysisViewModel(
+            container.userProfileUseCase,
+            container.apiKeyManager,
+            container.tryOnFileStore,
+            container.appContext
         )
     }
 
@@ -244,7 +268,8 @@ private fun WearWiseNavigationGraph(container: AppContainer, authenticatedUser: 
                         onUseInTryOn = { outfit ->
                             tryOnViewModel.applyOutfit(outfit)
                             navController.navigate(Screen.Avatar.route)
-                        }
+                        },
+                        onNavigateToTrips = { navController.navigate(Screen.Trips.route) }
                     )
                 }
 
@@ -255,6 +280,8 @@ private fun WearWiseNavigationGraph(container: AppContainer, authenticatedUser: 
                         emailVerified = authenticatedUser?.emailVerified == true,
                         onThemeModeChanged = container.themePreferences::setThemeMode,
                         onNavigateBack = { navController.popBackStack() },
+                        onNavigateToColorAnalysis = { navController.navigate(Screen.ColorAnalysis.route) },
+                        onNavigateToTrips = { navController.navigate(Screen.Trips.route) },
                         onSignOut = {
                             container.authentication.signOut()
                             navController.navigate(Screen.Welcome.route) {
@@ -267,6 +294,50 @@ private fun WearWiseNavigationGraph(container: AppContainer, authenticatedUser: 
                     ShoppingScreen(
                         viewModel = shoppingViewModel,
                         onNavigateToProfile = { navController.navigate(Screen.Profile.route) }
+                    )
+                }
+                composable(Screen.ColorAnalysis.route) {
+                    ColorAnalysisScreen(
+                        viewModel = colorAnalysisViewModel,
+                        onNavigateBack = { navController.popBackStack() }
+                    )
+                }
+                composable(Screen.Trips.route) {
+                    TripsScreen(
+                        viewModel = remember { TripsViewModel(container.tripRepository) },
+                        onNavigateToCreateTrip = { navController.navigate(Screen.CreateTrip.route) },
+                        onNavigateToTripDetail = { tripId -> navController.navigate(Screen.TripDetail.createRoute(tripId)) },
+                        onNavigateToProfile = { navController.navigate(Screen.Profile.route) },
+                        onNavigateBack = { navController.popBackStack() }
+                    )
+                }
+                composable(Screen.CreateTrip.route) {
+                    CreateTripScreen(
+                        viewModel = remember {
+                            CreateTripViewModel(
+                                container.tripRepository,
+                                container.wardrobeRepository,
+                                container.userRepository
+                            )
+                        },
+                        onNavigateBack = { navController.popBackStack() },
+                        onTripCreated = { tripId ->
+                            navController.navigate(Screen.TripDetail.createRoute(tripId)) {
+                                popUpTo(Screen.Trips.route)
+                            }
+                        }
+                    )
+                }
+                composable(
+                    route = Screen.TripDetail.route,
+                    arguments = listOf(navArgument("tripId") { type = NavType.LongType })
+                ) { backStackEntry ->
+                    val tripId = backStackEntry.arguments?.getLong("tripId") ?: 0L
+                    TripDetailScreen(
+                        viewModel = remember(tripId) {
+                            TripDetailViewModel(container.tripRepository, tripId)
+                        },
+                        onNavigateBack = { navController.popBackStack() }
                     )
                 }
                 }

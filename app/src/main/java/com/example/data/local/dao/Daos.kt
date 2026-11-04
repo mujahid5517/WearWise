@@ -13,6 +13,7 @@ import com.example.data.local.entity.UserProfileEntity
 import com.example.data.local.entity.WeeklyScheduleEntity
 import com.example.data.local.entity.WearHistoryEntity
 import com.example.data.local.entity.ShoppingItemEntity
+import com.example.data.local.entity.TripEntity
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -177,5 +178,20 @@ interface ShoppingItemDao {
     suspend fun update(item: ShoppingItemEntity)
 
     @Query("DELETE FROM shopping_items WHERE id = :id")
+    suspend fun delete(id: Long)
+}
+
+@Dao
+interface TripDao {
+    @Query("SELECT * FROM trips ORDER BY createdAt DESC")
+    fun observeAll(): Flow<List<TripEntity>>
+
+    @Query("SELECT * FROM trips WHERE id = :id LIMIT 1")
+    suspend fun getById(id: Long): TripEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(trip: TripEntity): Long
+
+    @Query("DELETE FROM trips WHERE id = :id")
     suspend fun delete(id: Long)
 }
