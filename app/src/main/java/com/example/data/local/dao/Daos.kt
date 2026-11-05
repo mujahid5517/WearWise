@@ -14,6 +14,8 @@ import com.example.data.local.entity.WeeklyScheduleEntity
 import com.example.data.local.entity.WearHistoryEntity
 import com.example.data.local.entity.ShoppingItemEntity
 import com.example.data.local.entity.TripEntity
+import com.example.data.local.entity.OutfitFeedbackEntity
+import com.example.data.local.entity.SyncQueueEntity
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -101,6 +103,9 @@ interface TryOnPreviewDao {
 
     @Query("SELECT * FROM try_on_previews WHERE id = :id LIMIT 1")
     suspend fun getTryOnPreviewById(id: Long): TryOnPreviewEntity?
+
+    @Query("SELECT generatedImagePath FROM try_on_previews WHERE outfitId = :outfitId AND fitType = 'Catalog' ORDER BY createdAt DESC LIMIT 1")
+    suspend fun getLatestCatalogImage(outfitId: Long): String?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertTryOnPreview(preview: TryOnPreviewEntity): Long
@@ -194,4 +199,39 @@ interface TripDao {
 
     @Query("DELETE FROM trips WHERE id = :id")
     suspend fun delete(id: Long)
+interface OutfitFeedbackDao {
+    @Query("SELECT * FROM outfit_feedback WHERE ownerUid = :uid AND deleted = 0 ORDER BY updatedAt DESC")
+    fun observe(uid: String): Flow<List<OutfitFeedbackEntity>>
+    @Query("SELECT * FROM outfit_feedback WHERE ownerUid = :uid AND outfitId = :outfitId LIMIT 1")
+    suspend fun get(uid: String, outfitId: Long): OutfitFeedbackEntity?
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(row: OutfitFeedbackEntity): Long
+    @Query("DELETE FROM outfit_feedback WHERE ownerUid = :uid AND outfitId = :outfitId")
+    suspend fun delete(uid: String, outfitId: Long)
+    @Query("SELECT * FROM outfit_feedback WHERE synced = 0 AND ownerUid = :uid")
+    suspend fun pending(uid: String): List<OutfitFeedbackEntity>
+    @Query("UPDATE outfit_feedback SET synced = 1 WHERE feedbackId = :id")
+    suspend fun markSynced(id: Long)
+    @Query("UPDATE outfit_feedback SET deleted = 1, synced = 0 WHERE ownerUid = :uid AND outfitId = :outfitId")
+    suspend fun markDeleted(uid: String, outfitId: Long)
+    @Query("DELETE FROM outfit_feedback WHERE feedbackId = :id")
+    suspend fun purge(id: Long)
+}
+
+@Dao
+interface SyncQueueDao {
+    @Query("SELECT * FROM sync_queue ORDER BY createdAt ASC")
+    fun getAllPending(): Flow<List<SyncQueueEntity>>
+
+    @Query("SELECT * FROM sync_queue ORDER BY createdAt ASC")
+    suspend fun getPendingQueue(): List<SyncQueueEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(item: SyncQueueEntity): Long
+
+    @Query("DELETE FROM sync_queue WHERE id = :id")
+    suspend fun delete(id: Long)
+
+    @Query("DELETE FROM sync_queue")
+    suspend fun clearAll()
 }

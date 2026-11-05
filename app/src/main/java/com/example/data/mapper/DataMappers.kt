@@ -2,6 +2,7 @@ package com.example.data.mapper
 
 import com.example.data.local.entity.ClothingItemEntity
 import com.example.data.local.entity.OutfitEntity
+import com.example.data.local.entity.OutfitFeedbackEntity
 import com.example.data.local.entity.TryOnPreviewEntity
 import com.example.data.local.entity.UserProfileEntity
 import com.example.data.local.entity.WeeklyScheduleEntity
@@ -9,6 +10,7 @@ import com.example.data.local.entity.WearHistoryEntity
 import com.example.data.local.entity.ShoppingItemEntity
 import com.example.domain.model.ClothingItem
 import com.example.domain.model.Outfit
+import com.example.domain.repository.OutfitFeedback
 import com.example.domain.model.TryOnPreview
 import com.example.domain.model.UserProfile
 import com.example.domain.model.WeeklyScheduleItem
@@ -199,7 +201,9 @@ fun OutfitEntity.toDomain(items: List<ClothingItem> = emptyList()): Outfit {
         thermalSyncScore = thermalSyncScore,
         colorHarmonyScore = colorHarmonyScore,
         createdAt = createdAt,
-        ownerUid = ownerUid
+        ownerUid = ownerUid,
+        colorCompatibilityExplanation = colorCompatibilityExplanation,
+        occasionSuitability = occasionSuitability
     )
 }
 
@@ -220,7 +224,9 @@ fun Outfit.toEntity(): OutfitEntity {
         thermalSyncScore = thermalSyncScore,
         colorHarmonyScore = colorHarmonyScore,
         createdAt = createdAt,
-        ownerUid = ownerUid
+        ownerUid = ownerUid,
+        colorCompatibilityExplanation = colorCompatibilityExplanation,
+        occasionSuitability = occasionSuitability
     )
 }
 
@@ -330,4 +336,39 @@ fun WearHistory.toEntity(): WearHistoryEntity = WearHistoryEntity(
     wornAtEpochMillis = wornAtEpochMillis,
     occasion = occasion,
     ownerUid = ownerUid
+)
+
+fun OutfitFeedbackEntity.toDomain(): OutfitFeedback = OutfitFeedback(
+    feedbackId = feedbackId,
+    outfitId = outfitId,
+    rating = rating,
+    reaction = reaction,
+    comment = comment,
+    outfitTitle = outfitTitle,
+    occasion = occasion,
+    style = style,
+    colors = colors,
+    categories = categories,
+    itemNames = itemNames,
+    createdAt = createdAt,
+    updatedAt = updatedAt
+)
+
+fun OutfitFeedback.toEntity(ownerUid: String = ""): OutfitFeedbackEntity = OutfitFeedbackEntity(
+    feedbackId = feedbackId,
+    ownerUid = ownerUid,
+    outfitId = outfitId,
+    rating = rating,
+    reaction = reaction,
+    comment = comment,
+    outfitTitle = outfitTitle,
+    occasion = occasion,
+    style = style,
+    colors = colors,
+    categories = categories,
+    itemNames = itemNames,
+    createdAt = createdAt,
+    updatedAt = updatedAt,
+    synced = false,
+    deleted = false
 )

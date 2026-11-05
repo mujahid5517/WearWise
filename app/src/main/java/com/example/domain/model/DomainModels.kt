@@ -2,21 +2,21 @@ package com.example.domain.model
 
 data class UserProfile(
     val id: Long = 1L,
-    val firstName: String = "",
+    val firstName: String = "Yared",
     val nickname: String = "",
-    val email: String = "",
+    val email: String = "yared@institution.edu",
     val ageRange: String = "",
     val gender: String = "",
-    val country: String = "",
-    val region: String = "",
-    val profession: String = "",
-    val dressEnvironment: String = "",
-    val stylePreferences: List<String> = emptyList(),
-    val favoriteColors: List<String> = emptyList(),
-    val avoidedColors: List<String> = emptyList(),
-    val commonOccasions: List<String> = emptyList(),
-    val climate: String = "",
-    val silhouetteArchetype: String = "",
+    val country: String = "United States",
+    val region: String = "Cambridge, MA",
+    val profession: String = "Academic & Research",
+    val dressEnvironment: String = "University / Research",
+    val stylePreferences: List<String> = listOf("Smart Casual"),
+    val favoriteColors: List<String> = listOf("Deep Navy", "Charcoal"),
+    val avoidedColors: List<String> = listOf("Neon Yellow"),
+    val commonOccasions: List<String> = listOf("Work", "Everyday"),
+    val climate: String = "Temperate",
+    val silhouetteArchetype: String = "Athletic Lean",
     val profileImage: String? = null,
     val profileImagePath: String? = null,
     val profileImageRes: Int? = null,
@@ -108,8 +108,18 @@ data class Outfit(
     val thermalSyncScore: Int = 99,
     val colorHarmonyScore: Int = 98,
     val createdAt: Long = System.currentTimeMillis(),
-    val ownerUid: String = ""
+    val ownerUid: String = "",
+    val colorCompatibilityExplanation: String = "",
+    val occasionSuitability: String = "",
+    val isAiGenerated: Boolean = false
 )
+
+/** Stable Room key for a transient recommendation that has not been saved as an outfit yet. */
+fun Outfit.previewCacheKey(): Long {
+    val signature = if (id > 0L) "saved:$id" else
+        items.map { it.id }.filter { it > 0L }.sorted().joinToString("-").ifBlank { title }
+    return "$ownerUid:$signature".hashCode().toLong().and(Long.MAX_VALUE).coerceAtLeast(1L)
+}
 
 data class TryOnPreview(
     val id: Long = 0L,
@@ -281,6 +291,54 @@ data class Trip(
 
 object WeatherDescriptions {
     fun describe(code: Int?): String {
+    val outfitId: Long,
+    val outfitTitle: String,
+    val clothingItemIds: List<Long>,
+    val wornAtEpochMillis: Long,
+    val occasion: String
+)
+
+data class WeatherHourlyForecast(
+    val time: String = "",
+    val weatherCode: Int = 0,
+    val temperatureC: Int = 20,
+    val precipitationProbability: Int? = 10
+)
+
+data class WeatherDailyForecast(
+    val date: String = "",
+    val weatherCode: Int? = 0,
+    val highC: Int? = 20,
+    val lowC: Int? = 12,
+    val apparentHighC: Int? = 20,
+    val precipitationProbability: Int? = 10,
+    val maxWindKmh: Int? = 10
+)
+
+data class WeatherForecast(
+    val location: WeatherLocation = WeatherLocation(),
+    val temperatureC: Int? = 20,
+    val feelsLikeC: Int? = 20,
+    val weatherCode: Int = 0,
+    val precipitationProbability: Int? = 10,
+    val precipitationMm: Double = 0.0,
+    val humidityPercent: Int? = 50,
+    val windKmh: Int? = 10,
+    val fetchedAtEpochMillis: Long = System.currentTimeMillis(),
+    val daily: List<WeatherDailyForecast> = emptyList(),
+    val hourly: List<WeatherHourlyForecast> = emptyList()
+)
+
+data class WeatherLocation(
+    val latitude: Double = 0.0,
+    val longitude: Double = 0.0,
+    val name: String = "Current Location"
+) {
+    val displayName: String get() = name
+}
+
+object WeatherDescriptions {
+    fun describe(code: Int): String {
         return when (code) {
             0 -> "Clear sky"
             1, 2, 3 -> "Partly cloudy"
@@ -293,4 +351,19 @@ object WeatherDescriptions {
             else -> "Fair"
         }
     }
+}
+            51, 53, 55 -> "Drizzle"
+            61, 63, 65 -> "Rain"
+            71, 73, 75 -> "Snow"
+            80, 81, 82 -> "Rain showers"
+            95, 96, 99 -> "Thunderstorm"
+            else -> "Partly cloudy"
+        }
+    }
+}
+
+sealed class TryOnGenerationException(message: String, cause: Throwable? = null) : Exception(message, cause) {
+    class InvalidImage(message: String) : TryOnGenerationException(message)
+    class NoImageReturned(message: String) : TryOnGenerationException(message)
+    class ApiError(message: String, cause: Throwable? = null) : TryOnGenerationException(message, cause)
 }
