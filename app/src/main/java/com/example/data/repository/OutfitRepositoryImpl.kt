@@ -13,6 +13,12 @@ import com.example.domain.model.WeatherDescriptions
 import com.example.data.local.entity.WearHistoryEntity
 import com.example.domain.repository.OutfitRepository
 import com.google.firebase.auth.FirebaseAuth
+import com.example.data.local.ApiKeyManager
+import com.example.data.remote.GeminiClient
+import com.example.data.remote.GeminiContent
+import com.example.data.remote.GeminiGenerateContentRequest
+import com.example.data.remote.GeminiPart
+import com.example.data.remote.generateTextContent
 import com.example.presentation.common.WearWiseDrawables
 import com.google.firebase.functions.FirebaseFunctions
 import kotlinx.coroutines.flow.Flow

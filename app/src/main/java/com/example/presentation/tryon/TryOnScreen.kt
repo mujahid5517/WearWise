@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -153,7 +154,7 @@ fun TryOnScreen(
     }
 
     fun launchCameraCapture() {
-        val (uri, _) = fileStore.createCameraOutputUri()
+        val uri = fileStore.createCameraOutputUri()
         pendingCameraUri = uri
         cameraLauncher.launch(uri)
     }
@@ -310,6 +311,15 @@ fun TryOnScreen(
                 val beforePath = userPhotoUri ?: preview?.userPhotoPath
                 if (!generatedPath.isNullOrBlank() && !beforePath.isNullOrBlank()) {
                     Spacer(modifier = Modifier.height(18.dp))
+                    val currentStatus = statusMessage
+                    if (currentStatus == "Your virtual outfit has been generated successfully!") {
+                        Text(
+                            text = currentStatus,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = CoutureEmerald
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
                     statusMessage?.let { msg ->
                         if (msg == "Your virtual outfit has been generated successfully!") {
                             Text(
@@ -924,6 +934,13 @@ private fun ErrorBanner(message: String, onRetry: () -> Unit) {
 }
 
 @Composable
+fun GenerationProgressCard(statusMessage: String?, onCancel: () -> Unit) {
+    androidx.compose.material3.Card(modifier = Modifier.fillMaxWidth().padding(8.dp)) {
+        Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            CircularProgressIndicator()
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(statusMessage ?: "Generating...")
+            TextButton(onClick = onCancel) { Text("Cancel") }
 fun GenerationProgressCard(
     statusMessage: String?,
     onCancel: () -> Unit
@@ -962,6 +979,9 @@ fun GenerationProgressCard(
 }
 
 @Composable
+fun FullscreenImagePreview(model: Any, title: String, onDismiss: () -> Unit) {
+    Box(modifier = Modifier.fillMaxSize().background(Color.Black).clickable(onClick = onDismiss), contentAlignment = Alignment.Center) {
+        AsyncImage(model = model, contentDescription = title, modifier = Modifier.fillMaxSize())
 fun BeforeAfterSlider(
     beforeModel: Any,
     afterModel: Any,
@@ -994,6 +1014,20 @@ fun BeforeAfterSlider(
 }
 
 @Composable
+fun PhotoCropDialog(photoPath: String, onDismiss: () -> Unit, onConfirm: (Float, Float, Float, Float) -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Crop Photo") },
+        text = { Text("Adjust crop region.") },
+        confirmButton = { TextButton(onClick = { onConfirm(0f, 0f, 1f, 1f) }) { Text("Done") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+@Composable
+fun BeforeAfterSlider(beforeModel: Any?, afterModel: Any?, modifier: Modifier = Modifier) {
+    Box(modifier = modifier.background(CardElevated), contentAlignment = Alignment.Center) {
+        AsyncImage(model = afterModel ?: beforeModel, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
 fun SideBySideComparison(
     beforeModel: Any,
     afterModel: Any,
@@ -1045,6 +1079,22 @@ fun ComparisonBadge(text: String, modifier: Modifier = Modifier) {
 }
 
 @Composable
+fun SideBySideComparison(beforeModel: Any?, afterModel: Any?, modifier: Modifier = Modifier) {
+    Row(modifier = modifier) {
+        Box(modifier = Modifier.weight(1f).fillMaxHeight()) { AsyncImage(model = beforeModel, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
+        Spacer(modifier = Modifier.width(4.dp))
+        Box(modifier = Modifier.weight(1f).fillMaxHeight()) { AsyncImage(model = afterModel, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
+    }
+}
+
+@Composable
+fun ComparisonBadge(text: String, modifier: Modifier = Modifier) {
+    Box(modifier = modifier.clip(RoundedCornerShape(8.dp)).background(RoyalElectricViolet).padding(horizontal = 8.dp, vertical = 4.dp)) {
+        Text(text, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+
 fun FullscreenImagePreview(
     model: Any,
     title: String,

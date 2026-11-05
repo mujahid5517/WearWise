@@ -13,6 +13,7 @@ import com.example.data.local.entity.UserProfileEntity
 import com.example.data.local.entity.WeeklyScheduleEntity
 import com.example.data.local.entity.WearHistoryEntity
 import com.example.data.local.entity.ShoppingItemEntity
+import com.example.data.local.entity.TripEntity
 import com.example.data.local.entity.OutfitFeedbackEntity
 import com.example.data.local.entity.SyncQueueEntity
 import kotlinx.coroutines.flow.Flow
@@ -186,6 +187,18 @@ interface ShoppingItemDao {
 }
 
 @Dao
+interface TripDao {
+    @Query("SELECT * FROM trips ORDER BY createdAt DESC")
+    fun observeAll(): Flow<List<TripEntity>>
+
+    @Query("SELECT * FROM trips WHERE id = :id LIMIT 1")
+    suspend fun getById(id: Long): TripEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(trip: TripEntity): Long
+
+    @Query("DELETE FROM trips WHERE id = :id")
+    suspend fun delete(id: Long)
 interface OutfitFeedbackDao {
     @Query("SELECT * FROM outfit_feedback WHERE ownerUid = :uid AND deleted = 0 ORDER BY updatedAt DESC")
     fun observe(uid: String): Flow<List<OutfitFeedbackEntity>>

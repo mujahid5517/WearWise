@@ -78,6 +78,7 @@ import com.example.data.remote.GeminiContent
 import com.example.data.remote.GeminiGenerateContentRequest
 import com.example.data.remote.GeminiInlineData
 import com.example.data.remote.GeminiPart
+import com.example.data.remote.generateTextContent
 import com.example.domain.model.ClothingItem
 import com.example.domain.model.WardrobeTaxonomy
 import com.example.domain.usecase.ManageWardrobeUseCase
@@ -230,7 +231,7 @@ fun WardrobeScreen(
     }
     val cameraPermission = rememberPermissionState(Manifest.permission.CAMERA) { granted ->
         if (granted) {
-            val (uri, _) = fileStore.createCameraOutputUri()
+            val uri = fileStore.createCameraOutputUri()
             pendingCamera = uri
             cameraPicker.launch(uri)
         } else viewModel.setError("Camera permission was denied. You can still choose a clothing photo from the gallery.")
@@ -366,7 +367,7 @@ fun WardrobeScreen(
             onPickGallery = { imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
             onTakePhoto = {
                 if (cameraPermission.status.isGranted) {
-                    val (uri, _) = fileStore.createCameraOutputUri(); pendingCamera = uri; cameraPicker.launch(uri)
+                    val uri = fileStore.createCameraOutputUri(); pendingCamera = uri; cameraPicker.launch(uri)
                 } else cameraPermission.launchPermissionRequest()
             },
             onSuggest = { path, apply -> viewModel.suggestFromPhoto(path, apply) },
@@ -565,6 +566,13 @@ private fun ChoiceMenu(label: String, choices: List<String>, selected: String, o
 }
 
 data class CatalogAsset(
+    val subcategory: String = "",
+    val color: String = "",
+    val occasion: String = "Everyday",
+    val season: String = "All-Season",
+    val imageRes: Int? = null,
+    val pattern: String = "Solid",
+    val assetName: String = ""
     val assetName: String,
     val name: String,
     val category: String,
@@ -582,6 +590,22 @@ fun BuiltInCatalogDialog(
     onDismiss: () -> Unit,
     onAdd: (CatalogAsset, String, String, Boolean) -> Unit
 ) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add from Catalog") },
+        text = { Text("Choose preset wardrobe catalog items.") },
+        confirmButton = {
+            TextButton(onClick = {
+                onAdd(CatalogAsset(subcategory = "Shirt", color = "White", assetName = "catalog_shirt"), "Classic White Shirt", "Tops", false)
+                onDismiss()
+            }) { Text("Add Item") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
+}
+
     var favorite by remember { mutableStateOf(false) }
 
     val sampleAssets = remember {

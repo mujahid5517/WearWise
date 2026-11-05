@@ -2,6 +2,8 @@ package com.example.presentation.planner
 
 import android.widget.Toast
 import android.Manifest
+import android.annotation.SuppressLint
+import android.util.Log
 import android.app.TimePickerDialog
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -32,6 +34,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.FlightTakeoff
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.LocalLaundryService
 import androidx.compose.material.icons.filled.Refresh
@@ -198,7 +201,7 @@ class PlannerViewModel(
         viewModelScope.launch {
             val saved = _location.value
             _weather.value = weatherUseCase.cached()?.takeIf { cached ->
-                saved == null || (cached.location.latitude == saved.latitude && cached.location.longitude == saved.longitude)
+                saved == null || (cached.location?.latitude == saved.latitude && cached.location?.longitude == saved.longitude)
             }
             saved?.let { refreshWeather(it, false) }
         }
@@ -778,7 +781,8 @@ private fun DayScheduleCard(
 fun PlannerScreen(
     viewModel: PlannerViewModel,
     onNavigateToProfile: () -> Unit,
-    onUseInTryOn: (Outfit) -> Unit = {}
+    onUseInTryOn: (Outfit) -> Unit = {},
+    onNavigateToTrips: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -844,6 +848,63 @@ fun PlannerScreen(
             WeatherDashboardCard(weather, location, loading, weatherError,
                 onRefresh = { viewModel.refreshWeather(force = true) },
                 onChooseCity = { cityDialog = true }, onUseLocation = requestLocation)
+            Spacer(Modifier.height(14.dp))
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .clickable { onNavigateToTrips() },
+                color = RoyalElectricViolet.copy(alpha = 0.15f),
+                shape = RoundedCornerShape(16.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, RoyalElectricViolet.copy(alpha = 0.4f))
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(CoutureAmber.copy(alpha = 0.2f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.FlightTakeoff,
+                                contentDescription = null,
+                                tint = CoutureAmber,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                        Column {
+                            Text(
+                                text = "AI Travel Packing Assistant",
+                                color = TextPrimary,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
+                            )
+                            Text(
+                                text = "Create trips, generate packing lists & daily itineraries",
+                                color = TextSecondary,
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                        contentDescription = "Open Trips",
+                        tint = CoutureAmber,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
             Spacer(Modifier.height(15.dp))
             WearWiseCard(Modifier.fillMaxWidth()) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
@@ -973,7 +1034,21 @@ fun PlannerScreen(
 private fun dailyWeatherSummary(day: WeatherDailyForecast): String =
     "${WeatherDescriptions.describe(day.weatherCode ?: 0)} · ${day.highC ?: "–"}° / ${day.lowC ?: "–"}° · rain ${day.precipitationProbability ?: "–"}%"
 
+@SuppressLint("MissingPermission")
 private fun requestPlannerLocation(context: Context, viewModel: PlannerViewModel) {
+    val hasFineLocation = ContextCompat.checkSelfPermission(
+        context,
+        Manifest.permission.ACCESS_FINE_LOCATION
+    ) == PackageManager.PERMISSION_GRANTED
+    val hasCoarseLocation = ContextCompat.checkSelfPermission(
+        context,
+        Manifest.permission.ACCESS_COARSE_LOCATION
+    ) == PackageManager.PERMISSION_GRANTED
+    if (!hasFineLocation && !hasCoarseLocation) {
+        Toast.makeText(context, "Allow location access or choose a city manually.", Toast.LENGTH_LONG).show()
+        return
+    }
+
     val token = CancellationTokenSource()
     val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
     val gpsEnabled = runCatching { locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER) }.getOrDefault(false)
@@ -982,6 +1057,42 @@ private fun requestPlannerLocation(context: Context, viewModel: PlannerViewModel
         Toast.makeText(context, "Location is turned off. Enable it or choose a city manually.", Toast.LENGTH_LONG).show()
         token.cancel()
         return
+    }
+    try {
+        LocationServices.getFusedLocationProviderClient(context)
+            .getCurrentLocation(Priority.PRIORITY_BALANCED_POWER_ACCURACY, token.token)
+            .addOnSuccessListener { location ->
+                if (location == null) Toast.makeText(context, "Could not get a location fix. Choose a city manually.", Toast.LENGTH_LONG).show()
+                else {
+                    val geocoder = Geocoder(context, Locale.getDefault())
+                    if (Geocoder.isPresent()) {
+                        java.util.concurrent.Executors.newSingleThreadExecutor().execute {
+                            val result = runCatching {
+                                @Suppress("DEPRECATION")
+                                geocoder.getFromLocation(location.latitude, location.longitude, 1)?.firstOrNull()
+                            }.getOrNull()
+                            val nameStr = result?.locality ?: result?.subAdminArea ?: result?.adminArea ?: "Current location"
+                            val admin1Str = result?.adminArea?.takeIf { it != result.locality }.orEmpty()
+                            val countryStr = result?.countryName.orEmpty()
+                            val dispName = listOf(nameStr, admin1Str, countryStr).filter { it.isNotBlank() }.joinToString(", ")
+                            val weatherLocation = WeatherLocation(
+                                displayName = dispName,
+                                name = nameStr,
+                                admin1 = admin1Str,
+                                country = countryStr,
+                                latitude = location.latitude,
+                                longitude = location.longitude
+                            )
+                            android.os.Handler(android.os.Looper.getMainLooper()).post { viewModel.useLocation(weatherLocation) }
+                        }
+                    } else viewModel.useLocation(WeatherLocation("Current location", latitude = location.latitude, longitude = location.longitude))
+                }
+            }
+            .addOnFailureListener { Toast.makeText(context, "Location unavailable. Choose a city manually.", Toast.LENGTH_LONG).show() }
+    } catch (securityException: SecurityException) {
+        Log.w("PlannerLocation", "Location permission was revoked before the request completed.", securityException)
+        token.cancel()
+        Toast.makeText(context, "Location access was revoked. Choose a city manually.", Toast.LENGTH_LONG).show()
     }
     LocationServices.getFusedLocationProviderClient(context).getCurrentLocation(Priority.PRIORITY_BALANCED_POWER_ACCURACY, token.token)
         .addOnSuccessListener { loc ->
@@ -1039,7 +1150,8 @@ private fun WeatherDashboardCard(
                                 Text(hour.time.takeLast(5), color = TextMuted, fontSize = 9.sp)
                                 Text(weatherEmoji(hour.weatherCode), fontSize = 16.sp)
                                 Text("${hour.temperatureC?.toInt() ?: "–"}°", color = TextPrimary, fontSize = 10.sp)
-                                Text("${hour.precipitationProbability?.let { "$it%" } ?: "–"}", color = TextMuted, fontSize = 8.sp)
+                                val prob = hour.precipitationProbability
+                                Text(if (prob != null) "$prob%" else "–", color = TextMuted, fontSize = 8.sp)
                             }
                         }
                     }

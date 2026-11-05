@@ -71,6 +71,14 @@ fun UserProfileEntity.toDomain(): UserProfile {
         silhouetteArchetype = silhouetteArchetype,
         profileImage = profileImage,
         profileImageRes = profileImageRes,
+        colorSeason = colorSeason,
+        skinUndertone = skinUndertone,
+        hairColorAnalyzed = hairColorAnalyzed,
+        eyeColorAnalyzed = eyeColorAnalyzed,
+        recommendedColors = if (recommendedColors.isEmpty()) emptyList() else recommendedColors.split(","),
+        colorsToAvoid = if (colorsToAvoid.isEmpty()) emptyList() else colorsToAvoid.split(","),
+        colorAnalysisRationale = colorAnalysisRationale,
+        colorAnalysisPhotoPath = colorAnalysisPhotoPath,
         createdAt = createdAt,
         updatedAt = updatedAt
     )
@@ -96,6 +104,14 @@ fun UserProfile.toEntity(): UserProfileEntity {
         silhouetteArchetype = silhouetteArchetype,
         profileImage = profileImage,
         profileImageRes = profileImageRes,
+        colorSeason = colorSeason,
+        skinUndertone = skinUndertone,
+        hairColorAnalyzed = hairColorAnalyzed,
+        eyeColorAnalyzed = eyeColorAnalyzed,
+        recommendedColors = recommendedColors.joinToString(","),
+        colorsToAvoid = colorsToAvoid.joinToString(","),
+        colorAnalysisRationale = colorAnalysisRationale,
+        colorAnalysisPhotoPath = colorAnalysisPhotoPath,
         createdAt = createdAt,
         updatedAt = updatedAt
     )
@@ -308,7 +324,18 @@ fun WearHistoryEntity.toDomain(): WearHistory = WearHistory(
     outfitTitle = outfitTitle,
     clothingItemIds = clothingItemIds.split(',').mapNotNull { it.toLongOrNull() },
     wornAtEpochMillis = wornAtEpochMillis,
-    occasion = occasion
+    occasion = occasion,
+    ownerUid = ownerUid
+)
+
+fun WearHistory.toEntity(): WearHistoryEntity = WearHistoryEntity(
+    id = id,
+    outfitId = outfitId,
+    outfitTitle = outfitTitle,
+    clothingItemIds = clothingItemIds.joinToString(","),
+    wornAtEpochMillis = wornAtEpochMillis,
+    occasion = occasion,
+    ownerUid = ownerUid
 )
 
 fun OutfitFeedbackEntity.toDomain(): OutfitFeedback = OutfitFeedback(

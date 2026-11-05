@@ -14,13 +14,23 @@ import androidx.core.view.WindowCompat
 import com.example.di.AppContainer
 import com.example.presentation.navigation.WearWiseApp
 import com.example.ui.theme.WearWiseTheme
-import com.google.firebase.FirebaseApp
 
 class MainActivity : ComponentActivity() {
+    @Suppress("DEPRECATION")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
+        val container = AppContainer(this)
+
+        // Cloud features are available when google-services.json is configured; local app features
+        // remain usable without Firebase configuration.
+        val firebaseApp = container.firebaseApp
+        if (firebaseApp != null) {
+            Log.d("WearWiseFirebase", "Firebase initialized successfully")
+            Log.d("WearWiseFirebase", "Project ID: ${firebaseApp.options.projectId}")
+        } else {
+            Log.w("WearWiseFirebase", "Firebase is not configured; continuing with local features")
         // The Google Services plugin normally supplies these options and initializes the
         // default app through FirebaseInitProvider before Activity.onCreate. Keep an explicit
         // one-time fallback for environments where provider initialization did not run.

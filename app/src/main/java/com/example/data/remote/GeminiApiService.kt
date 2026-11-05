@@ -8,13 +8,14 @@ import okhttp3.HttpUrl
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Response
+import retrofit2.HttpException
 import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
 import retrofit2.http.Body
-import retrofit2.http.Header
 import retrofit2.http.GET
 import retrofit2.http.POST
 import retrofit2.http.Path
+import retrofit2.http.Query
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
@@ -88,26 +89,31 @@ data class GeminiErrorDetail(
 )
 
 interface GeminiApiService {
-    @GET("v1/models/{model}")
+    @GET("v1beta/models/{model}")
     suspend fun getModel(
         @Path("model") model: String,
-        @Header("x-goog-api-key") apiKey: String
+        @Query("key") apiKey: String
     ): GeminiModelInfo
 
     @POST("v1/models/{model}:generateContent")
     suspend fun generateContent(
         @Path("model") model: String,
-        @Header("x-goog-api-key") apiKey: String,
+        @Query("key") apiKey: String,
         @Body request: GeminiGenerateContentRequest
     ): GeminiGenerateContentResponse
 
-    @POST("v1/models/gemini-2.5-flash:generateContent")
-    suspend fun generateTextContent(
-        @Header("x-goog-api-key") apiKey: String,
+    @POST("v1beta/models/{model}:generateContent")
+    suspend fun generateContentBeta(
+        @Path("model") model: String,
+        @Query("key") apiKey: String,
         @Body request: GeminiGenerateContentRequest
     ): GeminiGenerateContentResponse
-
 }
+
+suspend fun GeminiApiService.generateTextContent(
+    apiKey: String,
+    request: GeminiGenerateContentRequest
+): GeminiGenerateContentResponse = GeminiClient.generateTextContent(apiKey, request)
 
 @JsonClass(generateAdapter = true)
 data class GeminiModelInfo(
@@ -146,8 +152,20 @@ private class RedactingHttpLogger : Interceptor {
 object GeminiClient {
     private const val BASE_URL = "https://generativelanguage.googleapis.com/"
 
-    const val TEXT_MODEL = "gemini-2.5-flash"
-    const val IMAGE_MODEL = "gemini-3.1-flash-image"
+    @Volatile
+    private var cachedWorkingModel: String? = null
+
+    val MODEL_CANDIDATES = listOf(
+        "gemini-1.5-flash",
+        "gemini-1.5-flash-latest",
+        "gemini-2.0-flash",
+        "gemini-2.0-flash-exp",
+        "gemini-1.5-pro",
+        "gemini-2.5-flash"
+    )
+
+    const val TEXT_MODEL = "gemini-1.5-flash"
+    const val IMAGE_MODEL = "gemini-1.5-flash"
 
     private val okHttpClient = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
@@ -168,5 +186,61 @@ object GeminiClient {
             .addConverterFactory(MoshiConverterFactory.create(moshi))
             .build()
             .create(GeminiApiService::class.java)
+    }
+
+    suspend fun generateTextContent(
+        apiKey: String,
+        request: GeminiGenerateContentRequest
+    ): GeminiGenerateContentResponse {
+        val activeKey = apiKey.trim()
+        val cached = cachedWorkingModel
+        if (cached != null) {
+            try {
+                return apiService.generateContentBeta(cached, activeKey, request)
+            } catch (e: HttpException) {
+                if (e.code() != 404) {
+                    val errorBody = e.response()?.errorBody()?.string()
+                    Log.e("WearWiseGemini", "Gemini HTTP error ${e.code()}: $errorBody")
+                    throw IllegalStateException("Gemini API error (${e.code()}): ${parseApiError(errorBody) ?: e.message()}")
+                }
+                cachedWorkingModel = null
+            }
+        }
+
+        var lastException: Exception? = null
+        for (model in MODEL_CANDIDATES) {
+            try {
+                val res = apiService.generateContentBeta(model, activeKey, request)
+                cachedWorkingModel = model
+                return res
+            } catch (e: HttpException) {
+                val errorBody = e.response()?.errorBody()?.string()
+                Log.w("WearWiseGemini", "Model $model beta failed (${e.code()}): $errorBody")
+                if (e.code() != 404) {
+                    throw IllegalStateException("Gemini API error (${e.code()}): ${parseApiError(errorBody) ?: e.message()}")
+                }
+                lastException = e
+            }
+            try {
+                val res = apiService.generateContent(model, activeKey, request)
+                cachedWorkingModel = model
+                return res
+            } catch (e: HttpException) {
+                val errorBody = e.response()?.errorBody()?.string()
+                Log.w("WearWiseGemini", "Model $model v1 failed (${e.code()}): $errorBody")
+                if (e.code() != 404) {
+                    throw IllegalStateException("Gemini API error (${e.code()}): ${parseApiError(errorBody) ?: e.message()}")
+                }
+                lastException = e
+            }
+        }
+        throw lastException ?: IllegalStateException("All Gemini model endpoints returned HTTP 404. Please check your API key and model permissions.")
+    }
+
+    private fun parseApiError(errorBody: String?): String? {
+        if (errorBody.isNullOrBlank()) return null
+        return runCatching {
+            moshi.adapter(GeminiErrorEnvelope::class.java).fromJson(errorBody)?.error?.message
+        }.getOrNull()
     }
 }

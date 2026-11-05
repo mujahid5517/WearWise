@@ -30,12 +30,15 @@ import com.example.domain.repository.AuthenticationRepository
 import com.example.domain.repository.WardrobeRepository
 import com.example.domain.repository.WeatherRepository
 import com.example.domain.repository.ShoppingRepository
+import com.example.domain.repository.TripRepository
+import com.example.data.repository.TripRepositoryImpl
 import com.example.domain.usecase.ExecuteTryOnUseCase
 import com.example.domain.usecase.GetDailyRecommendationUseCase
 import com.example.domain.usecase.ManageWardrobeUseCase
 import com.example.domain.usecase.UserProfileUseCase
 import com.example.domain.usecase.WeeklyPlannerUseCase
 import com.example.domain.usecase.GetWeatherUseCase
+import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.FirebaseApp
 import com.google.firebase.firestore.FirebaseFirestore
@@ -49,6 +52,12 @@ class AppContainer(context: Context) {
     val appContext: Context = context.applicationContext
     val database: AppDatabase = AppDatabase.getInstance(context)
 
+    // Firebase is optional for local use; the app can still launch without google-services.json.
+    val firebaseApp = FirebaseApp.initializeApp(appContext)
+    val auth: FirebaseAuth? = firebaseApp?.let { FirebaseAuth.getInstance(it) }
+    val firestore: FirebaseFirestore? = firebaseApp?.let { FirebaseFirestore.getInstance(it) }
+    val storage: FirebaseStorage? = firebaseApp?.let { FirebaseStorage.getInstance(it) }
+    val authenticationRepository = FirebaseAuthenticationRepository(auth, firestore, storage)
     // Firebase Authentication & Cloud Firestore
     private val firebaseApp = checkNotNull(FirebaseApp.getApps(appContext).firstOrNull()) {
         "Firebase must be initialized before AppContainer is created. Check app/google-services.json."
@@ -81,7 +90,7 @@ class AppContainer(context: Context) {
         database,
         syncManager,
         TryOnFileStore(context),
-        WardrobeCloudStore(auth, firestore, FirebaseStorage.getInstance()),
+        WardrobeCloudStore(auth, firestore, storage),
         connectivityMonitor.isOnline
     )
     val outfitRepository: OutfitRepository = OutfitRepositoryImpl(
@@ -111,6 +120,7 @@ class AppContainer(context: Context) {
         tryOnImageProvider,
         tryOnCloudStore
     )
+    val tripRepository: TripRepository = TripRepositoryImpl(database.tripDao(), apiKeyManager)
 
     val getDailyRecommendationUseCase = GetDailyRecommendationUseCase(outfitRepository)
     val manageWardrobeUseCase = ManageWardrobeUseCase(wardrobeRepository)
