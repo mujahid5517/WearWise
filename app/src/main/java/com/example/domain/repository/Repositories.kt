@@ -163,8 +163,15 @@ interface TripRepository {
         weatherPreference: String,
         occasion: String,
         wardrobe: List<ClothingItem>,
-        profile: UserProfile?
+        profile: UserProfile?,
+        destinationLat: Double? = null,
+        destinationLng: Double? = null,
+        originLat: Double? = null,
+        originLng: Double? = null,
+        transportMode: String = "Car"
     ): Long
     suspend fun updateTrip(trip: Trip)
     suspend fun deleteTrip(id: Long)
+    suspend fun checkRepackingAlert(tripId: Long): String?
+    suspend fun autoApplyRepackingRecommendations(tripId: Long): Trip?
 }

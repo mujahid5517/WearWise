@@ -53,10 +53,16 @@ class AppContainer(context: Context) {
     val database: AppDatabase = AppDatabase.getInstance(context)
 
     // Firebase is optional for local use; the app can still launch without google-services.json.
-    val firebaseApp = FirebaseApp.initializeApp(appContext)
-    val auth: FirebaseAuth? = firebaseApp?.let { FirebaseAuth.getInstance(it) }
-    val firestore: FirebaseFirestore? = firebaseApp?.let { FirebaseFirestore.getInstance(it) }
-    val storage: FirebaseStorage? = firebaseApp?.let { FirebaseStorage.getInstance(it) }
+    val firebaseApp = runCatching {
+        if (FirebaseApp.getApps(appContext).isEmpty()) {
+            FirebaseApp.initializeApp(appContext)
+        } else {
+            FirebaseApp.getInstance()
+        }
+    }.getOrNull()
+    val auth: FirebaseAuth? = runCatching { firebaseApp?.let { FirebaseAuth.getInstance(it) } }.getOrNull()
+    val firestore: FirebaseFirestore? = runCatching { firebaseApp?.let { FirebaseFirestore.getInstance(it) } }.getOrNull()
+    val storage: FirebaseStorage? = runCatching { firebaseApp?.let { FirebaseStorage.getInstance(it) } }.getOrNull()
     val authenticationRepository = FirebaseAuthenticationRepository(auth, firestore, storage)
     // Firebase Authentication & Cloud Firestore
     private val firebaseApp = checkNotNull(FirebaseApp.getApps(appContext).firstOrNull()) {
@@ -120,7 +126,7 @@ class AppContainer(context: Context) {
         tryOnImageProvider,
         tryOnCloudStore
     )
-    val tripRepository: TripRepository = TripRepositoryImpl(database.tripDao(), apiKeyManager)
+    val tripRepository: TripRepository = TripRepositoryImpl(database.tripDao(), apiKeyManager, weatherRepository)
 
     val getDailyRecommendationUseCase = GetDailyRecommendationUseCase(outfitRepository)
     val manageWardrobeUseCase = ManageWardrobeUseCase(wardrobeRepository)

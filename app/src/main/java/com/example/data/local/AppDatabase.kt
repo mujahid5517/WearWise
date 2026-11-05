@@ -230,6 +230,29 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE trips ADD COLUMN destinationLat REAL DEFAULT NULL")
+                db.execSQL("ALTER TABLE trips ADD COLUMN destinationLng REAL DEFAULT NULL")
+                db.execSQL("ALTER TABLE trips ADD COLUMN repackingAlert TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        private val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE trips ADD COLUMN originLat REAL DEFAULT NULL")
+                db.execSQL("ALTER TABLE trips ADD COLUMN originLng REAL DEFAULT NULL")
+                db.execSQL("ALTER TABLE trips ADD COLUMN travelDistanceKm REAL DEFAULT NULL")
+                db.execSQL("ALTER TABLE trips ADD COLUMN travelDurationHours REAL DEFAULT NULL")
+            }
+        }
+
+        private val MIGRATION_14_15 = object : Migration(14, 15) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE trips ADD COLUMN transportMode TEXT NOT NULL DEFAULT 'Car'")
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(

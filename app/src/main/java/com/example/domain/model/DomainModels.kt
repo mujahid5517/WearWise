@@ -286,7 +286,15 @@ data class Trip(
     val packingList: List<TripPackingItem> = emptyList(),
     val itinerary: List<TripDayOutfit> = emptyList(),
     val ownerUid: String = "",
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val destinationLat: Double? = null,
+    val destinationLng: Double? = null,
+    val repackingAlert: String = "",
+    val originLat: Double? = null,
+    val originLng: Double? = null,
+    val travelDistanceKm: Double? = null,
+    val travelDurationHours: Double? = null,
+    val transportMode: String = "Car"
 )
 
 object WeatherDescriptions {
