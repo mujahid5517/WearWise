@@ -21,19 +21,19 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        val container = AppContainer(this)
-
-        // Firebase Authentication restores its persisted user session automatically.
-        try {
-            val firebaseApp = FirebaseApp.getInstance()
-            val firestore = container.firestore
-
-            Log.d("WearWiseFirebase", "Firebase initialized successfully")
-            Log.d("WearWiseFirebase", "Project ID: ${firebaseApp.options.projectId}")
-            Log.d("WearWiseFirebase", "Firestore instance: $firestore")
-        } catch (e: Exception) {
-            Log.e("WearWiseFirebase", "Firebase initialization failed", e)
+        // The Google Services plugin normally supplies these options and initializes the
+        // default app through FirebaseInitProvider before Activity.onCreate. Keep an explicit
+        // one-time fallback for environments where provider initialization did not run.
+        val firebaseApp = FirebaseApp.getApps(this).firstOrNull()
+            ?: FirebaseApp.initializeApp(this)
+        checkNotNull(firebaseApp) {
+            "Firebase is not configured for ${BuildConfig.APPLICATION_ID}. Add a valid " +
+                "app/google-services.json for this Android application ID and sync Gradle."
         }
+        Log.d("WearWiseFirebase", "Firebase initialized for project ${firebaseApp.options.projectId}")
+
+        // Construct Firebase-dependent repositories only after initialization succeeds.
+        val container = AppContainer(this)
 
         setContent {
             val themeMode by container.themePreferences.themeMode.collectAsState()

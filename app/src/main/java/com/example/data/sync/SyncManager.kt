@@ -49,6 +49,11 @@ class SyncManager(
         processQueue()
     }
 
+    suspend fun clearQueueOnSignOut() {
+        database.syncQueueDao().clearAll()
+        _syncState.value = SyncState.Idle
+    }
+
     private fun processQueue() {
         scope.launch {
             _syncState.value = SyncState.Syncing

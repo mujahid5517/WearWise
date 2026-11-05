@@ -37,6 +37,7 @@ import com.example.domain.usecase.UserProfileUseCase
 import com.example.domain.usecase.WeeklyPlannerUseCase
 import com.example.domain.usecase.GetWeatherUseCase
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.FirebaseApp
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.storage.FirebaseStorage
 import com.google.firebase.functions.FirebaseFunctions
@@ -49,7 +50,10 @@ class AppContainer(context: Context) {
     val database: AppDatabase = AppDatabase.getInstance(context)
 
     // Firebase Authentication & Cloud Firestore
-    val auth: FirebaseAuth = FirebaseAuth.getInstance()
+    private val firebaseApp = checkNotNull(FirebaseApp.getApps(appContext).firstOrNull()) {
+        "Firebase must be initialized before AppContainer is created. Check app/google-services.json."
+    }
+    val auth: FirebaseAuth = FirebaseAuth.getInstance(firebaseApp)
     val firestore: FirebaseFirestore = FirebaseFirestore.getInstance()
     val authenticationRepository = FirebaseAuthenticationRepository(auth, firestore, FirebaseStorage.getInstance())
     val authentication: AuthenticationRepository = authenticationRepository

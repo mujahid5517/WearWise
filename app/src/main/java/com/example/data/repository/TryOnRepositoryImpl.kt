@@ -257,8 +257,11 @@ class TryOnRepositoryImpl(
         }
         val res = garment.imageRes ?: garment.catalogAssetName?.let {
             context.resources.getIdentifier(it, "drawable", context.packageName).takeIf { id -> id != 0 }
-        } ?: return null
-        return fileStore.encodeDrawable(context, res)
+        }
+        if (res != null) {
+            return fileStore.encodeDrawable(context, res)
+        }
+        return null
     }
 
     private fun wrapImageError(error: Throwable): TryOnGenerationException {

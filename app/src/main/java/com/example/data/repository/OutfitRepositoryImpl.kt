@@ -24,36 +24,38 @@ import kotlinx.coroutines.tasks.await
 class OutfitRepositoryImpl(
     private val database: AppDatabase,
     private val syncManager: SyncManager,
-    private val auth: FirebaseAuth? = null,
-    private val functions: FirebaseFunctions? = null
+    private val auth: FirebaseAuth,
+    private val functions: FirebaseFunctions
 ) : OutfitRepository {
 
     override fun getAllOutfits(): Flow<List<Outfit>> {
+        val ownerUid = auth.currentUser?.uid.orEmpty()
         return database.outfitDao().getAllOutfits().map { entities ->
-            entities.filter { it.ownerUid == auth?.currentUser?.uid.orEmpty() }.map { entity ->
+            entities.filter { it.ownerUid == ownerUid }.map { entity ->
                 val clothingIds = database.outfitDao().getClothingIdsForOutfit(entity.id)
                 val items = clothingIds.mapNotNull { id ->
                     database.clothingItemDao().getClothingItemById(id)?.toDomain()
-                }.filter { it.ownerUid == auth?.currentUser?.uid.orEmpty() }
+                }.filter { it.ownerUid == ownerUid }
                 entity.toDomain(items)
             }
         }
     }
 
     override fun getFavoriteOutfits(): Flow<List<Outfit>> {
+        val ownerUid = auth.currentUser?.uid.orEmpty()
         return database.outfitDao().getFavoriteOutfits().map { entities ->
-            entities.filter { it.ownerUid == auth?.currentUser?.uid.orEmpty() }.map { entity ->
+            entities.filter { it.ownerUid == ownerUid }.map { entity ->
                 val clothingIds = database.outfitDao().getClothingIdsForOutfit(entity.id)
                 val items = clothingIds.mapNotNull { id ->
                     database.clothingItemDao().getClothingItemById(id)?.toDomain()
-                }.filter { it.ownerUid == auth?.currentUser?.uid.orEmpty() }
+                }.filter { it.ownerUid == ownerUid }
                 entity.toDomain(items)
             }
         }
     }
 
     override suspend fun getDailyRecommendation(): Outfit {
-        val ownerUid = auth?.currentUser?.uid.orEmpty()
+        val ownerUid = auth.currentUser?.uid.orEmpty()
         val wardrobe = database.clothingItemDao().getAllClothingItemsSnapshot()
             .map { it.toDomain() }
             .filter { it.ownerUid == ownerUid }
@@ -62,7 +64,6 @@ class OutfitRepositoryImpl(
             return buildWardrobeRecommendation(wardrobe, feedback).copy(ownerUid = ownerUid)
         }
         val outfits = database.outfitDao().getAllOutfits().first()
-            .filter { it.ownerUid == ownerUid }
         return if (ownerUid.isNotBlank()) {
             Outfit(
                 id = 0L,
@@ -105,7 +106,7 @@ class OutfitRepositoryImpl(
     }
 
     private suspend fun generateAiOutfit(weatherContext: String, occasion: String): Outfit? {
-        val uid = auth?.currentUser?.uid.orEmpty()
+        val uid = auth.currentUser?.uid.orEmpty()
         val wardrobe = database.clothingItemDao().getAllClothingItemsSnapshot()
             .map { it.toDomain() }
             .filter { it.ownerUid == uid }
@@ -121,7 +122,7 @@ class OutfitRepositoryImpl(
             .flatMap { listOf(it.colors, it.categories, it.style).flatMap { value -> value.split(",") } }
             .map(String::trim).filter(String::isNotBlank).groupingBy { it }.eachCount()
             .entries.sortedByDescending { it.value }.take(5).joinToString(", ") { it.key } else ""
-        val callable = functions ?: return null
+        val callable = functions
         val cloudIds = wardrobe.mapNotNull { item -> item.remoteId?.takeIf(String::isNotBlank) }
             .distinct().take(30)
         if (cloudIds.size < 2) return null
@@ -173,7 +174,7 @@ class OutfitRepositoryImpl(
     }
 
     private suspend fun localWardrobeRecommendation(occasion: String, weatherContext: String): Outfit? {
-        val ownerUid = auth?.currentUser?.uid.orEmpty()
+        val ownerUid = auth.currentUser?.uid.orEmpty()
         val wardrobe = database.clothingItemDao().getAllClothingItemsSnapshot()
             .map { it.toDomain() }.filter { it.ownerUid == ownerUid }
         if (wardrobe.isEmpty()) return null
@@ -187,7 +188,7 @@ class OutfitRepositoryImpl(
     }
 
     override suspend fun saveOutfit(outfit: Outfit): Long {
-        val ownerUid = auth?.currentUser?.uid.orEmpty()
+        val ownerUid = auth.currentUser?.uid.orEmpty()
         require(outfit.items.all { it.ownerUid == ownerUid }) { "Outfits can only use clothing from your signed-in wardrobe." }
         val id = database.outfitDao().insertOutfit(outfit.copy(ownerUid = ownerUid).toEntity())
         val itemLinks = outfit.items.filter { it.id > 0L && it.ownerUid == ownerUid }.map { com.example.data.local.entity.OutfitItemEntity(id, it.id) }
@@ -255,13 +256,14 @@ class OutfitRepositoryImpl(
     }
 
     override fun getWeeklySchedule(): Flow<List<WeeklyScheduleItem>> {
+        val ownerUid = auth.currentUser?.uid.orEmpty()
         return database.weeklyScheduleDao().getWeeklySchedule().map { list ->
-            list.filter { it.ownerUid == auth?.currentUser?.uid.orEmpty() }.map { it.toDomain() }
+            list.filter { it.ownerUid == ownerUid }.map { it.toDomain() }
         }
     }
 
     override suspend fun saveScheduleItem(item: WeeklyScheduleItem): Long {
-        val ownerUid = auth?.currentUser?.uid.orEmpty()
+        val ownerUid = auth.currentUser?.uid.orEmpty()
         if (item.outfitId != null) {
             val outfit = database.outfitDao().getOutfitById(item.outfitId)
             require(outfit?.ownerUid == ownerUid) { "Select an outfit from your own wardrobe." }
@@ -281,7 +283,7 @@ class OutfitRepositoryImpl(
 
     override suspend fun updateScheduleItem(item: WeeklyScheduleItem) {
         val current = database.weeklyScheduleDao().getScheduleById(item.id) ?: return
-        val ownerUid = auth?.currentUser?.uid.orEmpty()
+        val ownerUid = auth.currentUser?.uid.orEmpty()
         require(current.ownerUid == ownerUid) { "This plan belongs to another signed-in account." }
         if (item.outfitId != null) require(database.outfitDao().getOutfitById(item.outfitId)?.ownerUid == ownerUid) {
             "Select an outfit from your own wardrobe."
@@ -293,7 +295,7 @@ class OutfitRepositoryImpl(
 
     override suspend fun deleteScheduleItem(id: Long) {
         val current = database.weeklyScheduleDao().getScheduleById(id) ?: return
-        require(current.ownerUid == auth?.currentUser?.uid.orEmpty()) { "This plan belongs to another signed-in account." }
+        require(current.ownerUid == auth.currentUser?.uid.orEmpty()) { "This plan belongs to another signed-in account." }
         database.weeklyScheduleDao().deleteScheduleById(id)
         syncManager.enqueue("DELETE", "planner", id)
     }
@@ -313,10 +315,10 @@ class OutfitRepositoryImpl(
     }
 
     override fun getWearHistory(): Flow<List<WearHistory>> =
-        database.wearHistoryDao().observe(auth?.currentUser?.uid.orEmpty()).map { rows -> rows.map { it.toDomain() } }
+        database.wearHistoryDao().observe(auth.currentUser?.uid.orEmpty()).map { rows -> rows.map { it.toDomain() } }
 
     override suspend fun recordOutfitWorn(outfitId: Long) {
-        val ownerUid = auth?.currentUser?.uid.orEmpty()
+        val ownerUid = auth.currentUser?.uid.orEmpty()
         val outfit = database.outfitDao().getOutfitById(outfitId) ?: error("The saved outfit could not be found.")
         require(outfit.ownerUid == ownerUid) { "This outfit belongs to another signed-in account." }
         val ids = database.outfitDao().getClothingIdsForOutfit(outfitId).filter { id ->
