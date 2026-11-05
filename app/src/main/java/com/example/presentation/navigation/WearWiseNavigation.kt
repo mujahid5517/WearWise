@@ -317,7 +317,8 @@ private fun WearWiseNavigationGraph(container: AppContainer, authenticatedUser: 
                             CreateTripViewModel(
                                 container.tripRepository,
                                 container.wardrobeRepository,
-                                container.userRepository
+                                container.userRepository,
+                                container.weatherRepository
                             )
                         },
                         onNavigateBack = { navController.popBackStack() },
