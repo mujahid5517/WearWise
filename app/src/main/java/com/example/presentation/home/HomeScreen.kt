@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -52,10 +53,14 @@ import coil.compose.AsyncImage
 import com.example.domain.model.ClothingItem
 import com.example.domain.model.Outfit
 import com.example.domain.model.UserProfile
+import com.example.domain.model.previewCacheKey
 import com.example.domain.repository.OutfitRepository
+import com.example.domain.repository.OutfitFeedbackRepository
+import com.example.domain.repository.OutfitFeedback
 import com.example.domain.usecase.GetDailyRecommendationUseCase
 import com.example.domain.usecase.ManageWardrobeUseCase
 import com.example.domain.usecase.UserProfileUseCase
+import com.example.domain.usecase.ExecuteTryOnUseCase
 import com.example.presentation.common.GarmentSwapDialog
 import com.example.presentation.common.WearWiseCard
 import com.example.presentation.common.WearWiseDrawables
@@ -75,6 +80,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 data class DecomposedGarmentSlot(
     val id: String,
@@ -92,7 +99,10 @@ class HomeViewModel(
     private val getDailyRecommendationUseCase: GetDailyRecommendationUseCase,
     private val userProfileUseCase: UserProfileUseCase,
     private val manageWardrobeUseCase: ManageWardrobeUseCase,
-    private val outfitRepository: OutfitRepository
+    private val outfitRepository: OutfitRepository,
+    private val feedbackRepository: OutfitFeedbackRepository,
+    private val executeTryOnUseCase: ExecuteTryOnUseCase,
+    private val isOnline: StateFlow<Boolean>
 ) : ViewModel() {
 
     private val _outfit = MutableStateFlow<Outfit?>(null)
@@ -102,6 +112,16 @@ class HomeViewModel(
     val userProfile: StateFlow<UserProfile?> = _userProfile.asStateFlow()
     private val _generatingAiLook = MutableStateFlow(false)
     val generatingAiLook: StateFlow<Boolean> = _generatingAiLook.asStateFlow()
+    private val _generatingOutfitPreview = MutableStateFlow(false)
+    val generatingOutfitPreview: StateFlow<Boolean> = _generatingOutfitPreview.asStateFlow()
+    private val _outfitPreviewError = MutableStateFlow<String?>(null)
+    val outfitPreviewError: StateFlow<String?> = _outfitPreviewError.asStateFlow()
+    private val previewMutex = Mutex()
+    private val attemptedPreviewKeys = mutableSetOf<Long>()
+    val feedbackHistory: StateFlow<List<OutfitFeedback>> = feedbackRepository.observeFeedback()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    private val _currentFeedback = MutableStateFlow<OutfitFeedback?>(null)
+    val currentFeedback: StateFlow<OutfitFeedback?> = _currentFeedback.asStateFlow()
 
     val allWardrobeItems: StateFlow<List<ClothingItem>> = manageWardrobeUseCase.getAllItems()
         .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
@@ -154,14 +174,23 @@ class HomeViewModel(
 
     init {
         loadData()
+        viewModelScope.launch {
+            var previousOnline = isOnline.value
+            isOnline.collect { online ->
+                if (online && !previousOnline) _outfit.value?.let { ensureOutfitPreview(it) }
+                previousOnline = online
+            }
+        }
     }
 
     private fun loadData() {
         viewModelScope.launch {
             manageWardrobeUseCase.getAllItems().collect {
                 val recommendation = getDailyRecommendationUseCase()
-                _outfit.value = recommendation
-                _decomposedSlots.value = recommendation.items.mapIndexed { index, item ->
+                val cleanRecommendation = recommendation.copy(previewImageUri = null, previewImageRes = null)
+                _outfit.value = cleanRecommendation
+                _currentFeedback.value = feedbackRepository.getFeedback(recommendation)
+                _decomposedSlots.value = cleanRecommendation.items.mapIndexed { index, item ->
                     DecomposedGarmentSlot(
                         id = "wardrobe_${item.id}_$index",
                         name = item.name,
@@ -174,12 +203,21 @@ class HomeViewModel(
                         wardrobeItemId = item.id
                     )
                 }
+                ensureOutfitPreview(cleanRecommendation)
             }
         }
         viewModelScope.launch {
             userProfileUseCase.getProfile().collect { profile ->
                 _userProfile.value = profile
             }
+        }
+    }
+
+    fun submitFeedback(rating: Int? = _currentFeedback.value?.rating, reaction: String? = _currentFeedback.value?.reaction, comment: String = _currentFeedback.value?.comment.orEmpty()) {
+        val current = _outfit.value ?: return
+        viewModelScope.launch {
+            feedbackRepository.saveFeedback(current, rating, reaction, comment)
+            _currentFeedback.value = feedbackRepository.getFeedback(current)
         }
     }
 
@@ -215,14 +253,15 @@ class HomeViewModel(
         }
     }
 
-    fun generateAiRecommendation(onFinished: (Boolean) -> Unit) {
+    fun generateAiRecommendation(onFinished: (Boolean, Boolean) -> Unit) {
         if (_generatingAiLook.value) return
         viewModelScope.launch {
             _generatingAiLook.value = true
             try {
                 val suggestion = getDailyRecommendationUseCase.generateAiRecommendation()
                 if (suggestion != null) {
-                    _outfit.value = suggestion
+                    _outfit.value = suggestion.copy(previewImageUri = null, previewImageRes = null)
+                    _currentFeedback.value = feedbackRepository.getFeedback(suggestion)
                     _decomposedSlots.value = suggestion.items.mapIndexed { index, item ->
                         DecomposedGarmentSlot(
                             id = "wardrobe_${item.id}_$index", name = item.name, role = item.category,
@@ -231,34 +270,67 @@ class HomeViewModel(
                             category = item.category, wardrobeItemId = item.id
                         )
                     }
+                    ensureOutfitPreview(suggestion, force = true)
                 }
-                onFinished(suggestion != null)
+                onFinished(suggestion != null, suggestion?.isAiGenerated == true)
             } catch (_: Exception) {
-                onFinished(false)
+                onFinished(false, false)
             } finally {
                 _generatingAiLook.value = false
             }
         }
     }
 
-    fun shuffleRecommendation() {
-        viewModelScope.launch {
-            val current = _outfit.value
-            if (current != null) {
-                val newScore = if (current.score == 98) 96 else 98
-                val newTitle = if (current.title == "The Academic Tailor") "Modern Colloquium Core" else "The Academic Tailor"
-                val newRationale = if (newTitle == "Modern Colloquium Core") {
-                    "Layered charcoal merino knit paired with structured wool and tailored chinos. Ideal for classroom transitions with optimal thermal comfort."
-                } else {
-                    "Tailored specifically for your lecturer schedule. The 100% Oxford cotton weave ensures all-day breathability during the Faculty Meeting, while the structured navy chinos project relaxed academic authority at the 2:00 PM Colloquium."
+    fun retryOutfitPreview() {
+        val current = _outfit.value ?: return
+        viewModelScope.launch { ensureOutfitPreview(current, force = true) }
+    }
+
+    private suspend fun ensureOutfitPreview(outfit: Outfit, force: Boolean = false) {
+        val cacheKey = outfit.previewCacheKey()
+        previewMutex.withLock {
+            val cached = executeTryOnUseCase.getCachedOutfitPreview(cacheKey)
+            if (cached != null && (!force || !isOnline.value)) {
+                if (_outfit.value?.previewCacheKey() == cacheKey) {
+                    _outfit.value = _outfit.value?.copy(previewImageUri = cached, previewImageRes = null)
                 }
-                _outfit.value = current.copy(
-                    title = newTitle,
-                    score = newScore,
-                    rationale = newRationale
-                )
+                _outfitPreviewError.value = null
+                return
+            }
+            if (!force && cacheKey in attemptedPreviewKeys) return
+            if (outfit.items.isEmpty()) {
+                _outfitPreviewError.value = "Add wardrobe items to generate a full-body look."
+                return
+            }
+            if (!isOnline.value) {
+                _outfitPreviewError.value = "Connect to the internet to generate a full-body try-on. Saved previews remain available offline."
+                return
+            }
+            attemptedPreviewKeys.add(cacheKey)
+            _generatingOutfitPreview.value = true
+            _outfitPreviewError.value = null
+            try {
+                val modelImage = if (_userProfile.value?.gender.equals("female", ignoreCase = true)) {
+                    WearWiseDrawables.TryOnCasualSmart
+                } else {
+                    WearWiseDrawables.TryOnModel
+                }
+                val imagePath = executeTryOnUseCase.generateOutfitPreview(outfit, modelImage)
+                if (_outfit.value?.previewCacheKey() == cacheKey) {
+                    _outfit.value = _outfit.value?.copy(previewImageUri = imagePath, previewImageRes = null)
+                }
+            } catch (error: Exception) {
+                attemptedPreviewKeys.add(cacheKey)
+                _outfitPreviewError.value = error.message?.takeIf(String::isNotBlank)
+                    ?: "WearWise couldn't create this outfit image. Check the wardrobe photos and try again."
+            } finally {
+                _generatingOutfitPreview.value = false
             }
         }
+    }
+
+    fun shuffleRecommendation() {
+        generateAiRecommendation { _, _ -> }
     }
 }
 
@@ -268,11 +340,14 @@ fun HomeScreen(
     onNavigateToCloset: () -> Unit,
     onNavigateToAvatar: () -> Unit,
     onNavigateToPlanner: () -> Unit,
-    onNavigateToProfile: () -> Unit
+    onNavigateToProfile: () -> Unit,
+    onNavigateToFeedback: () -> Unit
 ) {
     val context = LocalContext.current
     val outfitState by viewModel.outfit.collectAsState()
     val generatingAiLook by viewModel.generatingAiLook.collectAsState()
+    val generatingOutfitPreview by viewModel.generatingOutfitPreview.collectAsState()
+    val outfitPreviewError by viewModel.outfitPreviewError.collectAsState()
     val userProfileState by viewModel.userProfile.collectAsState()
     val decomposedSlots by viewModel.decomposedSlots.collectAsState()
     val allWardrobeItems by viewModel.allWardrobeItems.collectAsState()
@@ -281,6 +356,8 @@ fun HomeScreen(
 
     val userName = userProfileState?.firstName?.trim()?.takeIf(String::isNotEmpty) ?: "there"
     val outfit = outfitState ?: return
+    val currentFeedback by viewModel.currentFeedback.collectAsState()
+    var feedbackComment by remember(currentFeedback?.feedbackId, currentFeedback?.comment) { mutableStateOf(currentFeedback?.comment.orEmpty()) }
 
     Column(
         modifier = Modifier
@@ -415,8 +492,30 @@ fun HomeScreen(
                 },
                 onTryAnother = {
                     viewModel.shuffleRecommendation()
-                }
+                },
+                isGeneratingPreview = generatingOutfitPreview,
+                previewError = outfitPreviewError,
+                onGeneratePreview = viewModel::retryOutfitPreview
             )
+
+            Row(modifier = Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+                Text("Helpful?", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                Text(if (currentFeedback?.reaction == "LIKE") "♥ Liked" else "♡ Like", color = if (currentFeedback?.reaction == "LIKE") CoutureAmber else TextPrimary, modifier = Modifier.clickable { viewModel.submitFeedback(reaction = if (currentFeedback?.reaction == "LIKE") null else "LIKE") }.padding(8.dp))
+                Text(if (currentFeedback?.reaction == "DISLIKE") "● Disliked" else "○ Dislike", color = if (currentFeedback?.reaction == "DISLIKE") RoyalElectricViolet else TextPrimary, modifier = Modifier.clickable { viewModel.submitFeedback(reaction = if (currentFeedback?.reaction == "DISLIKE") null else "DISLIKE") }.padding(8.dp))
+            }
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+                (1..5).forEach { star ->
+                    Text(if ((currentFeedback?.rating ?: 0) >= star) "★" else "☆", color = CoutureAmber, fontSize = 26.sp,
+                        modifier = Modifier.clickable { viewModel.submitFeedback(rating = star) }.padding(horizontal = 5.dp, vertical = 3.dp))
+                }
+            }
+            OutlinedTextField(value = feedbackComment, onValueChange = { feedbackComment = it.take(1000) },
+                label = { Text("Add an optional note", color = TextSecondary, fontSize = 12.sp) },
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp), maxLines = 2)
+            Text("SAVE FEEDBACK", color = CoutureAmber, fontSize = 11.sp, fontWeight = FontWeight.Bold,
+                modifier = Modifier.align(Alignment.End).clickable { viewModel.submitFeedback(comment = feedbackComment) }.padding(vertical = 5.dp))
+            Text("VIEW FEEDBACK HISTORY & STYLE INSIGHTS", color = CoutureAmber, fontSize = 11.sp, fontWeight = FontWeight.Bold,
+                modifier = Modifier.align(Alignment.CenterHorizontally).clickable(onClick = onNavigateToFeedback).padding(vertical = 8.dp))
 
             if (allWardrobeItems.isNotEmpty()) {
                 Box(
@@ -427,8 +526,13 @@ fun HomeScreen(
                         .background(CardElevated)
                         .border(1.dp, CardBorder, RoundedCornerShape(14.dp))
                         .clickable(enabled = !generatingAiLook) {
-                            viewModel.generateAiRecommendation { success ->
-                                Toast.makeText(context, if (success) "AI outfit ready" else "Add a Gemini key in Profile to create an AI outfit.", Toast.LENGTH_LONG).show()
+                            viewModel.generateAiRecommendation { success, aiEnhanced ->
+                                val message = when {
+                                    !success -> "Add clothing to your wardrobe to get a match."
+                                    aiEnhanced -> "Gemini outfit match ready"
+                                    else -> "Gemini is unavailable. Showing your offline wardrobe match."
+                                }
+                                Toast.makeText(context, message, Toast.LENGTH_LONG).show()
                             }
                         }
                         .padding(14.dp),

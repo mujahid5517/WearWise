@@ -759,3 +759,15 @@ fun FirebaseAccountScreen(
     }
 }
 
+    auth: com.google.firebase.auth.FirebaseAuth,
+    signIn: Boolean,
+    onSuccess: () -> Unit,
+    onToggleMode: () -> Unit,
+    onBack: () -> Unit
+) {
+    CreateAccountScreen(
+        onContinue = onSuccess,
+        onBack = onBack,
+        onSignIn = onToggleMode
+    )
+}

@@ -4,6 +4,5 @@ import androidx.lifecycle.ViewModel
 import com.example.domain.repository.AuthenticationRepository
 
 class AuthViewModel(
-    val authenticationRepository: AuthenticationRepository? = null
+    val authRepository: AuthenticationRepository
 ) : ViewModel()
-

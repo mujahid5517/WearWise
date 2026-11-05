@@ -114,7 +114,9 @@ secrets {
   ignoreList.add("FIREBASE_APPCHECK_DEBUG_TOKEN")
 }
 
-googleServices { missingGoogleServicesStrategy = MissingGoogleServicesStrategy.WARN }
+// Firebase-backed features require project options generated from app/google-services.json.
+// Fail the build with a clear configuration error instead of packaging an APK that crashes at startup.
+googleServices { missingGoogleServicesStrategy = MissingGoogleServicesStrategy.ERROR }
 
 // Some unused dependencies are commented out below instead of being removed.
 // This makes it easy to add them back in the future if needed.
@@ -146,6 +148,7 @@ dependencies {
   implementation(libs.converter.moshi)
   implementation(libs.firebase.ai)
   implementation(libs.firebase.firestore)
+  implementation(libs.firebase.functions)
   implementation(libs.firebase.storage)
   implementation(libs.play.services.location)
 

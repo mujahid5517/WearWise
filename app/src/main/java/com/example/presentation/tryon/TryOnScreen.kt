@@ -320,6 +320,16 @@ fun TryOnScreen(
                             color = CoutureEmerald
                         )
                         Spacer(modifier = Modifier.height(8.dp))
+                    statusMessage?.let { msg ->
+                        if (msg == "Your virtual outfit has been generated successfully!") {
+                            Text(
+                                text = msg,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = CoutureEmerald
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                        }
                     }
                     ResultCard(
                         beforePath = beforePath,
@@ -334,7 +344,7 @@ fun TryOnScreen(
                                 val result = viewModel.saveToGallery()
                                 Toast.makeText(
                                     context,
-                                    if (result.isSuccess) "Saved to Pictures/WearWise" else (result.exceptionOrNull()?.message ?: "Download failed"),
+                                    if (result != null) "Saved to Pictures/WearWise" else "Download failed",
                                     Toast.LENGTH_SHORT
                                 ).show()
                             }
@@ -931,6 +941,39 @@ fun GenerationProgressCard(statusMessage: String?, onCancel: () -> Unit) {
             Spacer(modifier = Modifier.height(8.dp))
             Text(statusMessage ?: "Generating...")
             TextButton(onClick = onCancel) { Text("Cancel") }
+fun GenerationProgressCard(
+    statusMessage: String?,
+    onCancel: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(CardElevated)
+            .border(1.dp, RoyalElectricViolet.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
+            .padding(16.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                CircularProgressIndicator(
+                    color = CoutureAmber,
+                    strokeWidth = 2.dp,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = statusMessage ?: "Processing Virtual Try-On...",
+                    fontSize = 12.sp,
+                    color = TextPrimary
+                )
+            }
+            TextButton(onClick = onCancel) {
+                Text("Cancel", color = CoutureRose, fontSize = 12.sp)
+            }
         }
     }
 }
@@ -939,6 +982,34 @@ fun GenerationProgressCard(statusMessage: String?, onCancel: () -> Unit) {
 fun FullscreenImagePreview(model: Any, title: String, onDismiss: () -> Unit) {
     Box(modifier = Modifier.fillMaxSize().background(Color.Black).clickable(onClick = onDismiss), contentAlignment = Alignment.Center) {
         AsyncImage(model = model, contentDescription = title, modifier = Modifier.fillMaxSize())
+fun BeforeAfterSlider(
+    beforeModel: Any,
+    afterModel: Any,
+    modifier: Modifier = Modifier
+) {
+    var sliderPos by remember { mutableStateOf(0.5f) }
+
+    Box(modifier = modifier.clip(RoundedCornerShape(20.dp))) {
+        AsyncImage(
+            model = afterModel,
+            contentDescription = "After",
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clip(RoundedCornerShape(0.dp))
+        ) {
+            AsyncImage(
+                model = beforeModel,
+                contentDescription = "Before",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .fillMaxWidth(sliderPos)
+            )
+        }
     }
 }
 
@@ -957,6 +1028,53 @@ fun PhotoCropDialog(photoPath: String, onDismiss: () -> Unit, onConfirm: (Float,
 fun BeforeAfterSlider(beforeModel: Any?, afterModel: Any?, modifier: Modifier = Modifier) {
     Box(modifier = modifier.background(CardElevated), contentAlignment = Alignment.Center) {
         AsyncImage(model = afterModel ?: beforeModel, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+fun SideBySideComparison(
+    beforeModel: Any,
+    afterModel: Any,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier.height(300.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .clip(RoundedCornerShape(16.dp))
+        ) {
+            AsyncImage(
+                model = beforeModel,
+                contentDescription = "Original",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+            ComparisonBadge("BEFORE", Modifier.padding(8.dp))
+        }
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .clip(RoundedCornerShape(16.dp))
+        ) {
+            AsyncImage(
+                model = afterModel,
+                contentDescription = "Virtual Try-On",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+            ComparisonBadge("AFTER", Modifier.padding(8.dp))
+        }
+    }
+}
+
+@Composable
+fun ComparisonBadge(text: String, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(Color.Black.copy(alpha = 0.7f))
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+    ) {
+        Text(text = text, color = CoutureAmber, fontSize = 10.sp, fontWeight = FontWeight.Bold)
     }
 }
 
@@ -977,3 +1095,59 @@ fun ComparisonBadge(text: String, modifier: Modifier = Modifier) {
 }
 
 
+fun FullscreenImagePreview(
+    model: Any,
+    title: String,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title, color = TextPrimary, fontSize = 14.sp) },
+        text = {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(400.dp)
+            ) {
+                AsyncImage(
+                    model = model,
+                    contentDescription = title,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close", color = CoutureAmber)
+            }
+        },
+        containerColor = DarkNavyBg
+    )
+}
+
+@Composable
+fun PhotoCropDialog(
+    photoPath: String,
+    onDismiss: () -> Unit,
+    onConfirm: (Float, Float, Float, Float) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Crop Photo", color = TextPrimary, fontWeight = FontWeight.Bold) },
+        text = {
+            Text("Crop your photo to focus on your upper body and posture.", color = TextSecondary, fontSize = 13.sp)
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(0.1f, 0.1f, 0.9f, 0.9f) }) {
+                Text("Apply Crop", color = CoutureEmerald)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel", color = TextMuted)
+            }
+        },
+        containerColor = DarkNavyBg
+    )
+}

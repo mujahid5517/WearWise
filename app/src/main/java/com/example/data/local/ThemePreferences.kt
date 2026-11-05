@@ -1,7 +1,6 @@
 package com.example.data.local
 
 import android.content.Context
-import android.content.SharedPreferences
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -11,9 +10,9 @@ enum class AppThemeMode(val label: String) {
     LIGHT("Light"),
     DARK("Dark");
 
-    fun resolvesToDark(systemIsDark: Boolean): Boolean {
+    fun resolvesToDark(systemInDark: Boolean = true): Boolean {
         return when (this) {
-            SYSTEM -> systemIsDark
+            SYSTEM -> systemInDark
             LIGHT -> false
             DARK -> true
         }
@@ -21,29 +20,17 @@ enum class AppThemeMode(val label: String) {
 }
 
 class ThemePreferences(context: Context) {
-    private val prefs: SharedPreferences = context.getSharedPreferences("wearwise_theme_prefs", Context.MODE_PRIVATE)
+    private val prefs = context.getSharedPreferences("wearwise_theme_prefs", Context.MODE_PRIVATE)
 
-    private val _themeMode = MutableStateFlow(loadThemeMode())
+    private val _themeMode = MutableStateFlow(
+        runCatching {
+            AppThemeMode.valueOf(prefs.getString("theme_mode", AppThemeMode.DARK.name) ?: AppThemeMode.DARK.name)
+        }.getOrDefault(AppThemeMode.DARK)
+    )
     val themeMode: StateFlow<AppThemeMode> = _themeMode.asStateFlow()
 
-    private fun loadThemeMode(): AppThemeMode {
-        val name = prefs.getString(KEY_THEME_MODE, AppThemeMode.SYSTEM.name)
-        return try {
-            AppThemeMode.valueOf(name ?: AppThemeMode.SYSTEM.name)
-        } catch (_: Exception) {
-            AppThemeMode.SYSTEM
-        }
-    }
-
     fun setThemeMode(mode: AppThemeMode) {
-        with(prefs.edit()) {
-            putString(KEY_THEME_MODE, mode.name)
-            apply()
-        }
         _themeMode.value = mode
-    }
-
-    companion object {
-        private const val KEY_THEME_MODE = "key_theme_mode"
+        prefs.edit().putString("theme_mode", mode.name).apply()
     }
 }
