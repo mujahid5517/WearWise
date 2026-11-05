@@ -58,6 +58,16 @@ class ShoppingViewModel(
 }
 
 @Composable
+fun EmptyShopScreen() {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(DarkNavyBg)
+            .testTag("shop_screen_empty")
+    )
+}
+
+@Composable
 fun ShoppingScreen(
     viewModel: ShoppingViewModel,
     onNavigateToProfile: () -> Unit

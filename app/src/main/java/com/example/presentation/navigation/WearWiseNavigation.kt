@@ -11,9 +11,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -38,6 +37,8 @@ import com.example.presentation.planner.PlannerScreen
 import com.example.presentation.planner.PlannerViewModel
 import com.example.presentation.profile.ProfileScreen
 import com.example.presentation.profile.ProfileViewModel
+import com.example.presentation.shopping.AssistantFloatingButton
+import com.example.presentation.shopping.EmptyShopScreen
 import com.example.presentation.shopping.ShoppingScreen
 import com.example.presentation.shopping.ShoppingViewModel
 import com.example.presentation.tryon.TryOnScreen
@@ -65,6 +66,7 @@ sealed class Screen(val route: String) {
     data object Planner : Screen("planner")
     data object Profile : Screen("profile")
     data object Shopping : Screen("shopping")
+    data object AssistantChat : Screen("assistant_chat")
     data object ColorAnalysis : Screen("color_analysis")
     data object Trips : Screen("trips")
     data object CreateTrip : Screen("create_trip")
@@ -73,6 +75,15 @@ sealed class Screen(val route: String) {
     }
     data object Feedback : Screen("feedback")
 }
+
+internal fun shouldShowAssistantButton(currentRoute: String): Boolean =
+    currentRoute !in setOf(
+        Screen.Welcome.route,
+        Screen.CreateAccount.route,
+        Screen.SignIn.route,
+        Screen.Onboarding.route,
+        Screen.AssistantChat.route
+    )
 
 @Composable
 fun WearWiseApp(container: AppContainer) {
@@ -111,6 +122,7 @@ private fun WearWiseNavigationGraph(container: AppContainer, authenticatedUser: 
         Screen.Profile.route
     )
     val shouldShowBottomBar = currentRoute in mainDestinations
+    val showAssistantButton = shouldShowAssistantButton(currentRoute)
 
     // ViewModels with constructor injection via container
     val homeViewModel = remember {
@@ -185,24 +197,25 @@ private fun WearWiseNavigationGraph(container: AppContainer, authenticatedUser: 
             }
         }
     ) { innerPadding ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            // Connectivity / sync status indicator — shown on all main screens
-            if (currentRoute in mainDestinations) {
-                OfflineStatusBar(
-                    isOnline = isOnline,
-                    syncState = syncState
-                )
-            }
+            Column(modifier = Modifier.fillMaxSize()) {
+                // Connectivity / sync status indicator — shown on all main screens
+                if (currentRoute in mainDestinations) {
+                    OfflineStatusBar(
+                        isOnline = isOnline,
+                        syncState = syncState
+                    )
+                }
 
-            NavHost(
-                navController = navController,
-                startDestination = if (authenticatedUser != null) Screen.Outfits.route else Screen.Welcome.route,
-                modifier = Modifier.fillMaxSize()
-            ) {
+                NavHost(
+                    navController = navController,
+                    startDestination = if (authenticatedUser != null) Screen.Outfits.route else Screen.Welcome.route,
+                    modifier = Modifier.fillMaxSize()
+                ) {
                 composable(Screen.Welcome.route) {
                     WelcomeScreen(
                         onNavigateToCreateAccount = {
@@ -304,9 +317,14 @@ private fun WearWiseNavigationGraph(container: AppContainer, authenticatedUser: 
                     )
                 }
                 composable(Screen.Shopping.route) {
+                    EmptyShopScreen()
+                }
+                composable(Screen.AssistantChat.route) {
                     ShoppingScreen(
                         viewModel = shoppingViewModel,
-                        onNavigateToProfile = { navController.navigate(Screen.Profile.route) }
+                        onNavigateToProfile = { navController.navigate(Screen.Profile.route) },
+                        showCloseButton = true,
+                        onNavigateBack = { navController.popBackStack() }
                     )
                 }
                 composable(Screen.ColorAnalysis.route) {
@@ -358,7 +376,20 @@ private fun WearWiseNavigationGraph(container: AppContainer, authenticatedUser: 
                 }
                 }
             }
+            if (showAssistantButton) {
+                AssistantFloatingButton(
+                    preferences = container.assistantButtonPreferences,
+                    onClick = {
+                        navController.navigate(Screen.AssistantChat.route) {
+                            launchSingleTop = true
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .align(Alignment.TopStart)
+                )
+            }
         }
     }
 }
-
+}
