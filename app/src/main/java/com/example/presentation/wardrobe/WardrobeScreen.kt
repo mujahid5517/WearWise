@@ -573,6 +573,15 @@ data class CatalogAsset(
     val imageRes: Int? = null,
     val pattern: String = "Solid",
     val assetName: String = ""
+    val assetName: String,
+    val name: String,
+    val category: String,
+    val subcategory: String,
+    val color: String,
+    val occasion: String,
+    val season: String,
+    val pattern: String,
+    val imageRes: Int?
 )
 
 @Composable
@@ -597,3 +606,50 @@ fun BuiltInCatalogDialog(
     )
 }
 
+    var favorite by remember { mutableStateOf(false) }
+
+    val sampleAssets = remember {
+        listOf(
+            CatalogAsset("oversized_tee", "Oversized Heavyweight Tee", "Tops", "T-shirts", "Matte Noir", "Everyday", "All Season", "Solid", com.example.presentation.common.WearWiseDrawables.ItemStreetTee),
+            CatalogAsset("cargo_trousers", "Wide-Leg Cargo Trousers", "Bottoms", "Trousers", "Olive Drab", "Everyday", "All Season", "Solid", com.example.presentation.common.WearWiseDrawables.ItemCargoPants),
+            CatalogAsset("tech_bomber", "Technical Bomber Jacket", "Outerwear", "Jackets", "Matte Charcoal", "Work", "Autumn", "Solid", com.example.presentation.common.WearWiseDrawables.ItemTechBomber),
+            CatalogAsset("court_sneakers", "Leather Court Low-Tops", "Shoes", "Sneakers", "Triple White", "Everyday", "All Season", "Solid", com.example.presentation.common.WearWiseDrawables.ItemCourtSneakers)
+        )
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Built-In Garment Catalog", color = TextPrimary, fontWeight = FontWeight.Bold) },
+        text = {
+            Column {
+                Text("Select a garment style to add to your closet:", color = TextSecondary, fontSize = 13.sp)
+                Spacer(modifier = Modifier.height(12.dp))
+                sampleAssets.forEach { asset ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(CardElevated)
+                            .clickable {
+                                onAdd(asset, asset.name, asset.category, favorite)
+                                onDismiss()
+                            }
+                            .padding(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(asset.name, color = TextPrimary, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+                        Text(asset.category, color = CoutureAmber, fontSize = 12.sp)
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            androidx.compose.material3.TextButton(onClick = onDismiss) {
+                Text("Cancel", color = TextMuted)
+            }
+        },
+        containerColor = DarkNavyBg
+    )
+}

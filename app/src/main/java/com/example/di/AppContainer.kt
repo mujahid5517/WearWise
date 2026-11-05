@@ -8,6 +8,8 @@ import com.example.data.local.ThemePreferences
 import com.example.data.auth.FirebaseAuthenticationRepository
 import com.example.data.repository.DatabaseSeeder
 import com.example.data.repository.OutfitRepositoryImpl
+import com.example.data.repository.OutfitFeedbackRepositoryImpl
+import com.example.data.repository.UserRepositoryImpl
 import com.example.data.media.TryOnFileStore
 import com.example.data.remote.tryon.CompositeVirtualTryOnProvider
 import com.example.data.remote.tryon.FirebaseAiVirtualTryOnProvider
@@ -38,8 +40,10 @@ import com.example.domain.usecase.WeeklyPlannerUseCase
 import com.example.domain.usecase.GetWeatherUseCase
 import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.FirebaseApp
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.storage.FirebaseStorage
+import com.google.firebase.functions.FirebaseFunctions
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -60,6 +64,13 @@ class AppContainer(context: Context) {
     val firestore: FirebaseFirestore? = runCatching { firebaseApp?.let { FirebaseFirestore.getInstance(it) } }.getOrNull()
     val storage: FirebaseStorage? = runCatching { firebaseApp?.let { FirebaseStorage.getInstance(it) } }.getOrNull()
     val authenticationRepository = FirebaseAuthenticationRepository(auth, firestore, storage)
+    // Firebase Authentication & Cloud Firestore
+    private val firebaseApp = checkNotNull(FirebaseApp.getApps(appContext).firstOrNull()) {
+        "Firebase must be initialized before AppContainer is created. Check app/google-services.json."
+    }
+    val auth: FirebaseAuth = FirebaseAuth.getInstance(firebaseApp)
+    val firestore: FirebaseFirestore = FirebaseFirestore.getInstance()
+    val authenticationRepository = FirebaseAuthenticationRepository(auth, firestore, FirebaseStorage.getInstance())
     val authentication: AuthenticationRepository = authenticationRepository
 
     // Language & Localization
@@ -80,7 +91,7 @@ class AppContainer(context: Context) {
 
     val apiKeyManager = ApiKeyManager(context)
 
-    val userRepository: UserRepository = authenticationRepository
+    val userRepository: UserRepository = UserRepositoryImpl(database)
     val wardrobeRepository: WardrobeRepository = WardrobeRepositoryImpl(
         database,
         syncManager,
@@ -88,7 +99,10 @@ class AppContainer(context: Context) {
         WardrobeCloudStore(auth, firestore, storage),
         connectivityMonitor.isOnline
     )
-    val outfitRepository: OutfitRepository = OutfitRepositoryImpl(database, syncManager, auth, apiKeyManager)
+    val outfitRepository: OutfitRepository = OutfitRepositoryImpl(
+        database, syncManager, auth, FirebaseFunctions.getInstance("africa-south1")
+    )
+    val outfitFeedbackRepository = OutfitFeedbackRepositoryImpl(database, auth, firestore, connectivityMonitor)
     val weatherRepository: WeatherRepository = OpenMeteoWeatherRepository(context)
     val shoppingCloudStore = ShoppingCloudStore(auth, firestore)
     val shoppingRepository: ShoppingRepository = ShoppingRepositoryImpl(

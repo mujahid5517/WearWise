@@ -84,7 +84,9 @@ data class OutfitEntity(
     val thermalSyncScore: Int,
     val colorHarmonyScore: Int,
     val createdAt: Long,
-    val ownerUid: String = ""
+    val ownerUid: String = "",
+    @androidx.room.ColumnInfo(defaultValue = "''") val colorCompatibilityExplanation: String = "",
+    @androidx.room.ColumnInfo(defaultValue = "''") val occasionSuitability: String = ""
 )
 
 @Entity(tableName = "outfit_items", primaryKeys = ["outfitId", "clothingId"])
@@ -175,13 +177,33 @@ data class TripEntity(
     val packingListJson: String,
     val itineraryJson: String,
     val ownerUid: String = "",
-    val createdAt: Long = System.currentTimeMillis(),
-    val destinationLat: Double? = null,
-    val destinationLng: Double? = null,
-    val repackingAlert: String = "",
-    val originLat: Double? = null,
-    val originLng: Double? = null,
-    val travelDistanceKm: Double? = null,
-    val travelDurationHours: Double? = null,
-    val transportMode: String = "Car"
+@Entity(tableName = "outfit_feedback", indices = [androidx.room.Index(value = ["ownerUid", "outfitId"], unique = true)])
+data class OutfitFeedbackEntity(
+    @PrimaryKey(autoGenerate = true) val feedbackId: Long = 0L,
+    val ownerUid: String,
+    val outfitId: Long,
+    val rating: Int? = null,
+    val reaction: String? = null,
+    val comment: String = "",
+    val outfitTitle: String,
+    val occasion: String,
+    val style: String,
+    val colors: String,
+    val categories: String,
+    val itemNames: String,
+    val createdAt: Long,
+    val updatedAt: Long,
+    val synced: Boolean = false,
+    val deleted: Boolean = false
+)
+
+@Entity(tableName = "sync_queue")
+data class SyncQueueEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0L,
+    val operation: String,
+    val entityType: String,
+    val entityId: Long,
+    val attemptCount: Int = 0,
+    val lastAttemptAt: Long = 0L,
+    val createdAt: Long = System.currentTimeMillis()
 )

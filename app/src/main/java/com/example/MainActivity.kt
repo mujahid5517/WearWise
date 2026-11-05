@@ -31,7 +31,19 @@ class MainActivity : ComponentActivity() {
             Log.d("WearWiseFirebase", "Project ID: ${firebaseApp.options.projectId}")
         } else {
             Log.w("WearWiseFirebase", "Firebase is not configured; continuing with local features")
+        // The Google Services plugin normally supplies these options and initializes the
+        // default app through FirebaseInitProvider before Activity.onCreate. Keep an explicit
+        // one-time fallback for environments where provider initialization did not run.
+        val firebaseApp = FirebaseApp.getApps(this).firstOrNull()
+            ?: FirebaseApp.initializeApp(this)
+        checkNotNull(firebaseApp) {
+            "Firebase is not configured for ${BuildConfig.APPLICATION_ID}. Add a valid " +
+                "app/google-services.json for this Android application ID and sync Gradle."
         }
+        Log.d("WearWiseFirebase", "Firebase initialized for project ${firebaseApp.options.projectId}")
+
+        // Construct Firebase-dependent repositories only after initialization succeeds.
+        val container = AppContainer(this)
 
         setContent {
             val themeMode by container.themePreferences.themeMode.collectAsState()

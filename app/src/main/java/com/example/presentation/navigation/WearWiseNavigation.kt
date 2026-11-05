@@ -31,6 +31,8 @@ import com.example.presentation.common.LocalWearWiseProfile
 import com.example.presentation.common.WearWiseBottomBar
 import com.example.presentation.home.HomeScreen
 import com.example.presentation.home.HomeViewModel
+import com.example.presentation.feedback.FeedbackScreen
+import com.example.presentation.feedback.FeedbackViewModel
 import com.example.presentation.onboarding.OnboardingScreen
 import com.example.presentation.planner.PlannerScreen
 import com.example.presentation.planner.PlannerViewModel
@@ -69,6 +71,7 @@ sealed class Screen(val route: String) {
     data object TripDetail : Screen("trip_detail/{tripId}") {
         fun createRoute(tripId: Long) = "trip_detail/$tripId"
     }
+    data object Feedback : Screen("feedback")
 }
 
 @Composable
@@ -111,7 +114,15 @@ private fun WearWiseNavigationGraph(container: AppContainer, authenticatedUser: 
 
     // ViewModels with constructor injection via container
     val homeViewModel = remember {
-        HomeViewModel(container.getDailyRecommendationUseCase, container.userProfileUseCase, container.manageWardrobeUseCase, container.outfitRepository)
+        HomeViewModel(
+            container.getDailyRecommendationUseCase,
+            container.userProfileUseCase,
+            container.manageWardrobeUseCase,
+            container.outfitRepository,
+            container.outfitFeedbackRepository,
+            container.executeTryOnUseCase,
+            container.connectivityMonitor.isOnline
+        )
     }
     val wardrobeViewModel = remember {
         WardrobeViewModel(container.manageWardrobeUseCase, container.tryOnFileStore, container.apiKeyManager)
@@ -146,6 +157,7 @@ private fun WearWiseNavigationGraph(container: AppContainer, authenticatedUser: 
             container.appContext
         )
     }
+    val feedbackViewModel = remember { FeedbackViewModel(container.outfitFeedbackRepository) }
 
     androidx.compose.runtime.CompositionLocalProvider(
         com.example.data.local.LocalAppLanguage provides currentLanguage,
@@ -204,7 +216,7 @@ private fun WearWiseNavigationGraph(container: AppContainer, authenticatedUser: 
 
                 composable(Screen.CreateAccount.route) {
                     FirebaseAccountScreen(
-                        viewModel = authViewModel,
+                        auth = container.auth,
                         signIn = false,
                         onSuccess = { navController.navigate(Screen.Outfits.route) { popUpTo(Screen.Welcome.route) { inclusive = true } } },
                         onToggleMode = { navController.navigate(Screen.SignIn.route) },
@@ -214,7 +226,7 @@ private fun WearWiseNavigationGraph(container: AppContainer, authenticatedUser: 
 
                 composable(Screen.SignIn.route) {
                     FirebaseAccountScreen(
-                        viewModel = authViewModel,
+                        auth = container.auth,
                         signIn = true,
                         onSuccess = { navController.navigate(Screen.Outfits.route) { popUpTo(Screen.Welcome.route) { inclusive = true } } },
                         onToggleMode = { navController.navigate(Screen.CreateAccount.route) },
@@ -238,7 +250,8 @@ private fun WearWiseNavigationGraph(container: AppContainer, authenticatedUser: 
                         onNavigateToCloset = { navController.navigate(Screen.Closet.route) },
                         onNavigateToAvatar = { navController.navigate(Screen.Avatar.route) },
                         onNavigateToPlanner = { navController.navigate(Screen.Planner.route) },
-                        onNavigateToProfile = { navController.navigate(Screen.Profile.route) }
+                        onNavigateToProfile = { navController.navigate(Screen.Profile.route) },
+                        onNavigateToFeedback = { navController.navigate(Screen.Feedback.route) }
                     )
                 }
 
@@ -340,6 +353,8 @@ private fun WearWiseNavigationGraph(container: AppContainer, authenticatedUser: 
                         },
                         onNavigateBack = { navController.popBackStack() }
                     )
+                composable(Screen.Feedback.route) {
+                    FeedbackScreen(viewModel = feedbackViewModel, onNavigateToProfile = { navController.navigate(Screen.Profile.route) })
                 }
                 }
             }

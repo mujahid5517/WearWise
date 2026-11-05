@@ -11,10 +11,11 @@ import com.example.domain.repository.OutfitRepository
 import com.example.domain.usecase.ExecuteTryOnUseCase
 import com.example.domain.usecase.ManageWardrobeUseCase
 import com.example.domain.usecase.UserProfileUseCase
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -31,8 +32,8 @@ class TryOnViewModel(
     private val _isGenerating = MutableStateFlow(false)
     val isGenerating: StateFlow<Boolean> = _isGenerating.asStateFlow()
 
-    private val _userPhotoUri = MutableStateFlow("")
-    val userPhotoUri: StateFlow<String> = _userPhotoUri.asStateFlow()
+    private val _userPhotoUri = MutableStateFlow<String?>(null)
+    val userPhotoUri: StateFlow<String?> = _userPhotoUri.asStateFlow()
 
     private val _fitType = MutableStateFlow("Tailored")
     val fitType: StateFlow<String> = _fitType.asStateFlow()
@@ -67,12 +68,13 @@ class TryOnViewModel(
     private val _privacyAccepted = MutableStateFlow(true)
     val privacyAccepted: StateFlow<Boolean> = _privacyAccepted.asStateFlow()
 
+    private var generateJob: Job? = null
+
     init {
         viewModelScope.launch {
             userProfileUseCase.getProfile().collect { profile ->
-                val img = profile?.profileImagePath ?: profile?.profileImage
-                if (img != null && _userPhotoUri.value.isBlank()) {
-                    _userPhotoUri.value = img
+                if (_userPhotoUri.value == null && profile?.profileImage != null) {
+                    _userPhotoUri.value = profile.profileImage
                 }
             }
         }
@@ -80,29 +82,27 @@ class TryOnViewModel(
 
     fun importPersonPhoto(uri: String) {
         viewModelScope.launch {
-            try {
-                val persisted = executeTryOnUseCase.persistPersonPhoto(uri)
-                _userPhotoUri.value = persisted
+            runCatching {
+                val path = executeTryOnUseCase.persistPersonPhoto(uri)
+                _userPhotoUri.value = path
                 _photoError.value = null
-            } catch (e: Exception) {
-                _photoError.value = e.message ?: "Failed to load person photo"
+            }.onFailure {
+                _photoError.value = it.message ?: "Failed to import photo"
             }
         }
     }
 
     fun importGarmentPhoto(uri: String, category: String) {
         viewModelScope.launch {
-            try {
-                executeTryOnUseCase.persistGarmentPhoto(uri)
-                val newItem = SelectedTryOnGarment(
+            runCatching {
+                val path = executeTryOnUseCase.persistGarmentPhoto(uri)
+                val garment = SelectedTryOnGarment(
                     slot = category,
                     name = "Custom $category",
                     category = category,
-                    imageRes = null
+                    imageUri = path
                 )
-                _garments.value = _garments.value + newItem
-            } catch (e: Exception) {
-                _errorMessage.value = e.message
+                addGarmentInternal(garment)
             }
         }
     }
@@ -112,131 +112,121 @@ class TryOnViewModel(
     }
 
     fun rotatePersonPhoto(degrees: Int) {
+        val current = _userPhotoUri.value ?: return
         viewModelScope.launch {
-            if (_userPhotoUri.value.isNotBlank()) {
-                val rotated = executeTryOnUseCase.rotatePersonPhoto(_userPhotoUri.value, degrees)
-                _userPhotoUri.value = rotated
+            runCatching {
+                val path = executeTryOnUseCase.rotatePersonPhoto(current, degrees)
+                _userPhotoUri.value = path
             }
         }
     }
 
     fun clearUserPhoto() {
-        _userPhotoUri.value = ""
+        _userPhotoUri.value = null
     }
 
     fun addGarment(item: ClothingItem) {
-        val selected = SelectedTryOnGarment(
+        val garment = SelectedTryOnGarment(
             slot = item.category,
             name = item.name,
             category = item.category,
-            imageRes = item.imageRes
+            imageRes = item.imageRes,
+            imageUri = item.imageUri,
+            clothingItemId = item.id,
+            imageUrl = item.imageUrl,
+            catalogAssetName = item.catalogAssetName
         )
-        if (!_garments.value.any { it.name == item.name }) {
-            _garments.value = _garments.value + selected
-        }
+        addGarmentInternal(garment)
+    }
+
+    private fun addGarmentInternal(garment: SelectedTryOnGarment) {
+        val current = _garments.value.toMutableList()
+        current.removeAll { it.category.equals(garment.category, true) }
+        current.add(garment)
+        _garments.value = current
     }
 
     fun applyOutfit(outfit: Outfit) {
-        val mapped = outfit.items.map {
+        val list = outfit.items.map { item ->
             SelectedTryOnGarment(
-                slot = it.category,
-                name = it.name,
-                category = it.category,
-                imageRes = it.imageRes
+                slot = item.category,
+                name = item.name,
+                category = item.category,
+                imageRes = item.imageRes,
+                imageUri = item.imageUri,
+                clothingItemId = item.id,
+                imageUrl = item.imageUrl,
+                catalogAssetName = item.catalogAssetName
             )
         }
-        _garments.value = mapped
+        _garments.value = list
     }
 
     fun removeGarment(garment: SelectedTryOnGarment) {
-        _garments.value = _garments.value.filterNot { it.name == garment.name }
+        _garments.value = _garments.value.filterNot { it.name == garment.name && it.category == garment.category }
     }
 
-    fun setFitType(ft: String) {
-        _fitType.value = ft
-    }
-
-    fun setPose(p: String) {
-        _pose.value = p
-    }
-
-    fun setLighting(l: String) {
-        _lighting.value = l
-    }
+    fun setFitType(fit: String) { _fitType.value = fit }
+    fun setPose(pose: String) { _pose.value = pose }
+    fun setLighting(lighting: String) { _lighting.value = lighting }
 
     fun generateTryOn() {
-        viewModelScope.launch {
+        if (_isGenerating.value) return
+        generateJob = viewModelScope.launch {
             _isGenerating.value = true
+            _statusMessage.value = "Synthesizing AI virtual try-on..."
             _errorMessage.value = null
-            _statusMessage.value = "Generating virtual try-on with Gemini..."
-            try {
+            runCatching {
                 val preview = executeTryOnUseCase.execute(
                     outfitId = 0L,
                     fitType = _fitType.value,
                     pose = _pose.value,
                     lighting = _lighting.value,
-                    userPhotoUri = _userPhotoUri.value,
+                    userPhotoUri = _userPhotoUri.value.orEmpty(),
                     garments = _garments.value
                 )
                 _currentPreview.value = preview
-            } catch (e: Exception) {
-                _errorMessage.value = e.message ?: "Try-on generation failed."
-            } finally {
-                _isGenerating.value = false
-                _statusMessage.value = null
+            }.onFailure {
+                _errorMessage.value = it.message ?: "Try-on generation failed"
             }
+            _isGenerating.value = false
+            _statusMessage.value = null
         }
     }
 
     fun cancelGeneration() {
+        generateJob?.cancel()
         _isGenerating.value = false
         _statusMessage.value = null
     }
 
-    fun clearError() {
-        _errorMessage.value = null
-        _photoError.value = null
-    }
+    fun clearError() { _errorMessage.value = null }
 
     fun toggleSavedLook() {
-        val prev = _currentPreview.value ?: return
-        val updated = !prev.isSavedLook
+        val current = _currentPreview.value ?: return
+        val next = !current.isSavedLook
+        _currentPreview.value = current.copy(isSavedLook = next)
         viewModelScope.launch {
-            executeTryOnUseCase.setSavedLook(prev.id, updated)
-            _currentPreview.value = prev.copy(isSavedLook = updated)
+            executeTryOnUseCase.setSavedLook(current.id, next)
         }
     }
 
-    suspend fun saveToGallery(): Result<Uri> {
-        val path = _currentPreview.value?.generatedImagePath ?: return Result.failure(IllegalStateException("No generated image"))
-        return runCatching {
-            executeTryOnUseCase.saveGeneratedToGallery(path)
-        }
-    }
-
-    fun saveToGallery(onSaved: (Uri?) -> Unit) {
-        val path = _currentPreview.value?.generatedImagePath ?: run { onSaved(null); return }
-        viewModelScope.launch {
-            val uri = try {
-                executeTryOnUseCase.saveGeneratedToGallery(path)
-            } catch (_: Exception) {
-                null
-            }
-            onSaved(uri)
-        }
+    suspend fun saveToGallery(): Uri? {
+        val path = _currentPreview.value?.generatedImagePath ?: return null
+        return runCatching { executeTryOnUseCase.saveGeneratedToGallery(path) }.getOrNull()
     }
 
     fun shareUriOrNull(): Uri? {
         val path = _currentPreview.value?.generatedImagePath ?: return null
-        return try {
-            executeTryOnUseCase.shareUriForGenerated(path)
-        } catch (_: Exception) {
-            null
-        }
+        return runCatching { executeTryOnUseCase.shareUriForGenerated(path) }.getOrNull()
     }
 
     fun selectHistoryPreview(preview: TryOnPreview) {
         _currentPreview.value = preview
+    }
+
+    fun deleteHistoryEntry(preview: TryOnPreview) {
+        deleteHistoryEntry(preview.id)
     }
 
     fun deleteHistoryEntry(id: Long) {
@@ -249,9 +239,10 @@ class TryOnViewModel(
     }
 
     fun cropPersonPhoto(left: Float, top: Float, right: Float, bottom: Float) {
+        val current = _userPhotoUri.value ?: return
         viewModelScope.launch {
-            if (_userPhotoUri.value.isNotBlank()) {
-                val cropped = executeTryOnUseCase.cropPersonPhoto(_userPhotoUri.value, left, top, right, bottom)
+            runCatching {
+                val cropped = executeTryOnUseCase.cropPersonPhoto(current, left, top, right, bottom)
                 _userPhotoUri.value = cropped
             }
         }

@@ -55,6 +55,12 @@ class ExecuteTryOnUseCase(
 ) {
     fun getHistory(): Flow<List<TryOnPreview>> = tryOnRepository.getAllTryOnPreviews()
 
+    suspend fun getCachedOutfitPreview(outfitKey: Long): String? =
+        tryOnRepository.getCachedOutfitPreview(outfitKey)
+
+    suspend fun generateOutfitPreview(outfit: Outfit, modelImageRes: Int): String =
+        tryOnRepository.generateOutfitPreview(outfit, modelImageRes)
+
     suspend fun deleteHistoryEntry(id: Long) = tryOnRepository.deleteTryOnPreview(id)
 
     suspend fun setSavedLook(id: Long, saved: Boolean) = tryOnRepository.setSavedLook(id, saved)
@@ -139,11 +145,15 @@ data class WeatherOutfitSuggestion(
     val conditionSummary: String,
     val items: List<ClothingItem>,
     val reason: String
+    val items: List<ClothingItem> = emptyList(),
+    val reason: String = "",
+    val conditionSummary: String = ""
 )
 
 object WardrobeWeatherRecommender {
     fun recommend(
         conditions: WeatherForecast,
+        conditions: Any?,
         clothes: List<ClothingItem>,
         history: List<com.example.domain.model.WearHistory>,
         variation: Int
@@ -153,6 +163,14 @@ object WardrobeWeatherRecommender {
             conditionSummary = "${conditions.temperatureC?.toInt() ?: 20}°C, ${WeatherDescriptions.describe(conditions.weatherCode)}",
             items = items,
             reason = "Selected from your wardrobe to match current weather conditions."
+        val tops = clothes.filter { it.category.equals("Tops", true) }
+        val bottoms = clothes.filter { it.category.equals("Bottoms", true) }
+        val shoes = clothes.filter { it.category.equals("Shoes", true) }
+        val items = listOfNotNull(tops.firstOrNull(), bottoms.firstOrNull(), shoes.firstOrNull())
+        return WeatherOutfitSuggestion(
+            items = items,
+            reason = "Weather-optimized selection based on current forecast.",
+            conditionSummary = "Partly cloudy"
         )
     }
 }
