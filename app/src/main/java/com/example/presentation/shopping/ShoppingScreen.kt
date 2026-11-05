@@ -31,6 +31,7 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Checkroom
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Lightbulb
@@ -82,9 +83,21 @@ import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
 
 @Composable
+fun EmptyShopScreen() {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(DarkNavyBg)
+            .testTag("shop_screen_empty")
+    )
+}
+
+@Composable
 fun ShoppingScreen(
     viewModel: ShoppingViewModel? = null,
-    onNavigateToProfile: () -> Unit = {}
+    onNavigateToProfile: () -> Unit = {},
+    showCloseButton: Boolean = false,
+    onNavigateBack: () -> Unit = {}
 ) {
     val uiState = viewModel?.uiState?.collectAsState()?.value ?: ShoppingUiState()
     var inputText by remember { mutableStateOf("") }
@@ -165,16 +178,30 @@ fun ShoppingScreen(
                         modifier = Modifier.size(20.dp)
                     )
                 }
-                IconButton(
-                    onClick = onNavigateToProfile,
-                    modifier = Modifier.size(36.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Person,
-                        contentDescription = "Profile",
-                        tint = TextMuted,
-                        modifier = Modifier.size(20.dp)
-                    )
+                if (showCloseButton) {
+                    IconButton(
+                        onClick = onNavigateBack,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Close assistant",
+                            tint = TextMuted,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                } else {
+                    IconButton(
+                        onClick = onNavigateToProfile,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Person,
+                            contentDescription = "Profile",
+                            tint = TextMuted,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 }
             }
         }

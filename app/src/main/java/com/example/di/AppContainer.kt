@@ -3,6 +3,7 @@ package com.example.di
 import android.content.Context
 import com.example.data.local.ApiKeyManager
 import com.example.data.local.AppDatabase
+import com.example.data.local.AssistantButtonPreferences
 import com.example.data.local.LanguageManager
 import com.example.data.local.ThemePreferences
 import com.example.data.auth.FirebaseAuthenticationRepository
@@ -65,6 +66,7 @@ class AppContainer(context: Context) {
     // Language & Localization
     val languageManager = LanguageManager(context)
     val themePreferences = ThemePreferences(context)
+    val assistantButtonPreferences = AssistantButtonPreferences(context)
 
     // Connectivity + Sync infrastructure
     val connectivityMonitor = ConnectivityMonitor(context)
