@@ -74,11 +74,6 @@ import coil.compose.AsyncImage
 import com.example.data.local.ApiKeyManager
 import com.example.data.media.TryOnFileStore
 import com.example.data.remote.GeminiClient
-import com.example.data.remote.GeminiContent
-import com.example.data.remote.GeminiGenerateContentRequest
-import com.example.data.remote.GeminiInlineData
-import com.example.data.remote.GeminiPart
-import com.example.data.remote.generateTextContent
 import com.example.domain.model.ClothingItem
 import com.example.domain.model.WardrobeTaxonomy
 import com.example.domain.usecase.ManageWardrobeUseCase
@@ -156,16 +151,8 @@ class WardrobeViewModel(
                 val image = withContext(Dispatchers.IO) { fileStore?.encodeForApi(path) }
                     ?: error("Image analysis is unavailable.")
                 val prompt = "Analyze this clothing photo. Reply with exactly five lines, no markdown: category (one of Tops, Bottoms, Outerwear, Dresses and One-Piece, Shoes, Accessories); subcategory; dominant color; visible pattern (or Solid); one concise visual description. Do not infer brand or size."
-                val result = GeminiClient.apiService.generateTextContent(
-                    key,
-                    GeminiGenerateContentRequest(
-                        contents = listOf(GeminiContent(listOf(
-                            GeminiPart(text = prompt),
-                            GeminiPart(inlineData = GeminiInlineData(image.mimeType, image.base64Data))
-                        )))
-                ))
-                val lines = result.candidates?.firstOrNull()?.content?.parts.orEmpty()
-                    .mapNotNull { it.text?.trim() }.firstOrNull().orEmpty().lines().map { it.trim() }
+                val result = GeminiClient.analyzeClothing(key, prompt, image.mimeType, image.base64Data)
+                val lines = result.lines().map { it.trim() }
                 require(lines.size >= 5) { "AI did not return usable suggestions. Enter the details manually." }
                 val categoryLine = lines[0].substringAfter(":", lines[0]).trim()
                 val category = WardrobeTaxonomy.categories.keys.firstOrNull { categoryLine.equals(it, true) }

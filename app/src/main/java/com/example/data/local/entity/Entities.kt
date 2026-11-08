@@ -133,6 +133,7 @@ data class WeeklyScheduleEntity(
     val occasion: String = "Everyday",
     val reminderEnabled: Boolean = false,
     val reminderTimeMinutes: Int = 480,
+    val activityTimeMinutes: Int = 540,
     val notes: String = "",
     val wornAtEpochMillis: Long? = null,
     val ownerUid: String = ""
@@ -163,8 +164,20 @@ data class ShoppingItemEntity(
     val priority: String = "MEDIUM",
     val status: String = "NEEDED",
     val favorite: Boolean = false,
+    val quantity: Int = 1,
+    val actualPrice: Double? = null,
+    val purchasedAt: Long? = null,
+    val isDeleted: Boolean = false,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
+)
+
+@Entity(tableName = "shopping_budgets", primaryKeys = ["ownerUid"])
+data class ShoppingBudgetEntity(
+    val ownerUid: String,
+    val amount: Double = 0.0,
+    val currency: String = "USD",
+    val updatedAt: Long = 0L
 )
 
 @Entity(tableName = "trips")

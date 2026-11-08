@@ -12,8 +12,6 @@ import com.example.data.repository.OutfitRepositoryImpl
 import com.example.data.repository.OutfitFeedbackRepositoryImpl
 import com.example.data.repository.UserRepositoryImpl
 import com.example.data.media.TryOnFileStore
-import com.example.data.remote.tryon.CompositeVirtualTryOnProvider
-import com.example.data.remote.tryon.FirebaseAiVirtualTryOnProvider
 import com.example.data.remote.tryon.GeminiVirtualTryOnProvider
 import com.example.data.remote.tryon.TryOnCloudStore
 import com.example.data.remote.WardrobeCloudStore
@@ -97,15 +95,11 @@ class AppContainer(context: Context) {
     val shoppingCloudStore = ShoppingCloudStore(auth, firestore)
     val shoppingRepository: ShoppingRepository = ShoppingRepositoryImpl(
         database = database,
-        apiKeyManager = apiKeyManager,
         cloudStore = shoppingCloudStore,
         connectivity = connectivityMonitor.isOnline
     )
     val tryOnFileStore = TryOnFileStore(context)
-    val tryOnImageProvider = CompositeVirtualTryOnProvider(
-        FirebaseAiVirtualTryOnProvider(),
-        GeminiVirtualTryOnProvider()
-    )
+    val tryOnImageProvider = GeminiVirtualTryOnProvider()
     val tryOnCloudStore = TryOnCloudStore(auth, firestore)
     val tryOnRepository: TryOnRepository = TryOnRepositoryImpl(
         context,

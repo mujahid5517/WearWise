@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -25,7 +27,6 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
@@ -61,6 +62,7 @@ import com.example.domain.usecase.GetDailyRecommendationUseCase
 import com.example.domain.usecase.ManageWardrobeUseCase
 import com.example.domain.usecase.UserProfileUseCase
 import com.example.domain.usecase.ExecuteTryOnUseCase
+import com.example.presentation.planner.PlannerViewModel
 import com.example.presentation.common.GarmentSwapDialog
 import com.example.presentation.common.WearWiseCard
 import com.example.presentation.common.WearWiseDrawables
@@ -337,6 +339,7 @@ class HomeViewModel(
 @Composable
 fun HomeScreen(
     viewModel: HomeViewModel,
+    plannerViewModel: PlannerViewModel,
     onNavigateToCloset: () -> Unit,
     onNavigateToAvatar: () -> Unit,
     onNavigateToPlanner: () -> Unit,
@@ -345,6 +348,10 @@ fun HomeScreen(
 ) {
     val context = LocalContext.current
     val outfitState by viewModel.outfit.collectAsState()
+    val plannerSuggestion by plannerViewModel.activeRecommendation.collectAsState()
+    val plannerWeather by plannerViewModel.weather.collectAsState()
+    val plannerSchedules by plannerViewModel.schedules.collectAsState()
+    val plannerFahrenheit by plannerViewModel.fahrenheit.collectAsState()
     val generatingAiLook by viewModel.generatingAiLook.collectAsState()
     val generatingOutfitPreview by viewModel.generatingOutfitPreview.collectAsState()
     val outfitPreviewError by viewModel.outfitPreviewError.collectAsState()
@@ -355,7 +362,19 @@ fun HomeScreen(
     var activeSwapSlot by remember { mutableStateOf<DecomposedGarmentSlot?>(null) }
 
     val userName = userProfileState?.firstName?.trim()?.takeIf(String::isNotEmpty) ?: "there"
-    val outfit = outfitState ?: return
+    val outfit = if (plannerSuggestion != null) {
+        val suggestion = plannerSuggestion!!
+        Outfit(
+            title = suggestion.title,
+            occasion = suggestion.occasion,
+            style = "Weather-ready",
+            rationale = suggestion.reason,
+            weatherTag = suggestion.conditionSummary,
+            items = suggestion.items
+        )
+    } else {
+        outfitState ?: return
+    }
     val currentFeedback by viewModel.currentFeedback.collectAsState()
     var feedbackComment by remember(currentFeedback?.feedbackId, currentFeedback?.comment) { mutableStateOf(currentFeedback?.comment.orEmpty()) }
 
@@ -428,13 +447,13 @@ fun HomeScreen(
                         Spacer(modifier = Modifier.width(6.dp))
                         Column {
                             Text(
-                                text = "${outfit.score}%",
+                                text = if (plannerSuggestion != null) "Today" else "${outfit.score}%",
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = TextPrimary
                             )
                             Text(
-                                text = "Match",
+                                text = if (plannerSuggestion != null) "Weather" else "Match",
                                 fontSize = 9.sp,
                                 color = TextMuted
                             )
@@ -460,9 +479,20 @@ fun HomeScreen(
                         .padding(horizontal = 10.dp, vertical = 8.dp)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.WbSunny, contentDescription = null, tint = CoutureAmber, modifier = Modifier.size(14.dp))
+                        Text(homeWeatherEmoji(plannerWeather?.weatherCode), fontSize = 14.sp)
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Live weather in Planner", fontSize = 11.sp, fontWeight = FontWeight.Medium, color = TextSecondary)
+                        Column {
+                            val temperature = plannerWeather?.temperatureC?.let {
+                                val shown = if (plannerFahrenheit) it * 9.0 / 5.0 + 32.0 else it
+                                "${shown.toInt()}°${if (plannerFahrenheit) "F" else "C"}"
+                            } ?: "Weather"
+                            Text(
+                                "$temperature · ${plannerWeather?.weatherCode?.let(com.example.domain.model.WeatherDescriptions::describe) ?: "Set location in Planner"}",
+                                fontSize = 10.sp, fontWeight = FontWeight.Medium, color = TextSecondary, maxLines = 1
+                            )
+                            Text(plannerWeather?.location?.displayName ?: "Choose a weather location", fontSize = 8.sp, color = TextMuted, maxLines = 1)
+                        }
+
                     }
                 }
 
@@ -477,7 +507,16 @@ fun HomeScreen(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.CalendarMonth, contentDescription = null, tint = RoyalElectricViolet, modifier = Modifier.size(14.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Next: 2:00 PM Meeting", fontSize = 11.sp, fontWeight = FontWeight.Medium, color = TextSecondary)
+                        val today = java.time.LocalDate.now().toString()
+                        val nextPlan = plannerSchedules.filter { it.dateIso >= today }.minByOrNull { it.dateIso }
+                        Text(
+                            nextPlan?.let {
+                                val hour = it.activityTimeMinutes / 60
+                                val minute = (it.activityTimeMinutes % 60).toString().padStart(2, '0')
+                                "Next: %02d:%s %s".format(hour, minute, it.occasion)
+                            } ?: "No planned events",
+                            fontSize = 10.sp, fontWeight = FontWeight.Medium, color = TextSecondary, maxLines = 1
+                        )
                     }
                 }
             }
@@ -485,39 +524,82 @@ fun HomeScreen(
             Spacer(modifier = Modifier.height(18.dp))
 
             // Curated Outfit Card
-            WearWiseOutfitCard(
-                outfit = outfit,
-                onWearThis = {
-                    Toast.makeText(context, "Look #01 logged as today's ensemble!", Toast.LENGTH_SHORT).show()
-                },
-                onTryAnother = {
-                    viewModel.shuffleRecommendation()
-                },
-                isGeneratingPreview = generatingOutfitPreview,
-                previewError = outfitPreviewError,
-                onGeneratePreview = viewModel::retryOutfitPreview
-            )
-
-            Row(modifier = Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-                Text("Helpful?", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                Text(if (currentFeedback?.reaction == "LIKE") "♥ Liked" else "♡ Like", color = if (currentFeedback?.reaction == "LIKE") CoutureAmber else TextPrimary, modifier = Modifier.clickable { viewModel.submitFeedback(reaction = if (currentFeedback?.reaction == "LIKE") null else "LIKE") }.padding(8.dp))
-                Text(if (currentFeedback?.reaction == "DISLIKE") "● Disliked" else "○ Dislike", color = if (currentFeedback?.reaction == "DISLIKE") RoyalElectricViolet else TextPrimary, modifier = Modifier.clickable { viewModel.submitFeedback(reaction = if (currentFeedback?.reaction == "DISLIKE") null else "DISLIKE") }.padding(8.dp))
-            }
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-                (1..5).forEach { star ->
-                    Text(if ((currentFeedback?.rating ?: 0) >= star) "★" else "☆", color = CoutureAmber, fontSize = 26.sp,
-                        modifier = Modifier.clickable { viewModel.submitFeedback(rating = star) }.padding(horizontal = 5.dp, vertical = 3.dp))
+            if (plannerSuggestion != null) {
+                WearWiseCard(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(14.dp)) {
+                        val today = java.time.LocalDate.now().toString()
+                        Text(
+                            if (plannerSuggestion!!.date == today) "TODAY'S RECOMMENDED OUTFIT"
+                            else "RECOMMENDED OUTFIT · ${plannerSuggestion!!.date}",
+                            color = CoutureAmber, fontSize = 10.sp, fontWeight = FontWeight.Bold
+                        )
+                        Text(plannerSuggestion!!.title, color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 5.dp))
+                        if (plannerSuggestion!!.items.isNotEmpty()) {
+                            androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 9.dp)) {
+                                items(plannerSuggestion!!.items, key = { it.id }) { item ->
+                                    Column(Modifier.width(72.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                        val image: Any? = item.imageUri ?: item.imageUrl ?: item.imageRes ?: item.catalogAssetName?.let {
+                                            context.resources.getIdentifier(it, "drawable", context.packageName).takeIf { id -> id != 0 }
+                                        }
+                                        if (image != null) AsyncImage(image, item.name, Modifier.size(62.dp).clip(RoundedCornerShape(10.dp)), contentScale = ContentScale.Crop)
+                                        Text(item.name, color = TextSecondary, fontSize = 9.sp, maxLines = 2)
+                                    }
+                                }
+                            }
+                        } else {
+                            Text("Add suitable items to your wardrobe to get a complete outfit.", color = TextSecondary, fontSize = 11.sp, modifier = Modifier.padding(vertical = 6.dp))
+                        }
+                        Text(plannerSuggestion!!.reason, color = TextSecondary, fontSize = 11.sp, lineHeight = 16.sp)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 6.dp)) {
+                            androidx.compose.material3.TextButton(
+                                onClick = {
+                                    plannerViewModel.saveWeatherRecommendation(plannerSuggestion!!) { created ->
+                                        Toast.makeText(context, if (created) "Weather recommendation saved" else "This recommendation is already saved", Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                enabled = plannerSuggestion!!.items.isNotEmpty()
+                            ) { Text("Save outfit") }
+                            androidx.compose.material3.TextButton(onClick = onNavigateToPlanner) { Text("Open Planner") }
+                        }
+                    }
                 }
+            } else {
+                WearWiseOutfitCard(
+                    outfit = outfit,
+                    onWearThis = {
+                        Toast.makeText(context, "Look #01 logged as today's ensemble!", Toast.LENGTH_SHORT).show()
+                    },
+                    onTryAnother = {
+                        viewModel.shuffleRecommendation()
+                    },
+                    isGeneratingPreview = generatingOutfitPreview,
+                    previewError = outfitPreviewError,
+                    onGeneratePreview = viewModel::retryOutfitPreview
+                )
             }
-            OutlinedTextField(value = feedbackComment, onValueChange = { feedbackComment = it.take(1000) },
-                label = { Text("Add an optional note", color = TextSecondary, fontSize = 12.sp) },
-                modifier = Modifier.fillMaxWidth().padding(top = 4.dp), maxLines = 2)
-            Text("SAVE FEEDBACK", color = CoutureAmber, fontSize = 11.sp, fontWeight = FontWeight.Bold,
-                modifier = Modifier.align(Alignment.End).clickable { viewModel.submitFeedback(comment = feedbackComment) }.padding(vertical = 5.dp))
-            Text("VIEW FEEDBACK HISTORY & STYLE INSIGHTS", color = CoutureAmber, fontSize = 11.sp, fontWeight = FontWeight.Bold,
-                modifier = Modifier.align(Alignment.CenterHorizontally).clickable(onClick = onNavigateToFeedback).padding(vertical = 8.dp))
 
-            if (allWardrobeItems.isNotEmpty()) {
+            if (plannerSuggestion == null) {
+                Row(modifier = Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+                    Text("Helpful?", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                    Text(if (currentFeedback?.reaction == "LIKE") "♥ Liked" else "♡ Like", color = if (currentFeedback?.reaction == "LIKE") CoutureAmber else TextPrimary, modifier = Modifier.clickable { viewModel.submitFeedback(reaction = if (currentFeedback?.reaction == "LIKE") null else "LIKE") }.padding(8.dp))
+                    Text(if (currentFeedback?.reaction == "DISLIKE") "● Disliked" else "○ Dislike", color = if (currentFeedback?.reaction == "DISLIKE") RoyalElectricViolet else TextPrimary, modifier = Modifier.clickable { viewModel.submitFeedback(reaction = if (currentFeedback?.reaction == "DISLIKE") null else "DISLIKE") }.padding(8.dp))
+                }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+                    (1..5).forEach { star ->
+                        Text(if ((currentFeedback?.rating ?: 0) >= star) "★" else "☆", color = CoutureAmber, fontSize = 26.sp,
+                            modifier = Modifier.clickable { viewModel.submitFeedback(rating = star) }.padding(horizontal = 5.dp, vertical = 3.dp))
+                    }
+                }
+                OutlinedTextField(value = feedbackComment, onValueChange = { feedbackComment = it.take(1000) },
+                    label = { Text("Add an optional note", color = TextSecondary, fontSize = 12.sp) },
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp), maxLines = 2)
+                Text("SAVE FEEDBACK", color = CoutureAmber, fontSize = 11.sp, fontWeight = FontWeight.Bold,
+                    modifier = Modifier.align(Alignment.End).clickable { viewModel.submitFeedback(comment = feedbackComment) }.padding(vertical = 5.dp))
+                Text("VIEW FEEDBACK HISTORY & STYLE INSIGHTS", color = CoutureAmber, fontSize = 11.sp, fontWeight = FontWeight.Bold,
+                    modifier = Modifier.align(Alignment.CenterHorizontally).clickable(onClick = onNavigateToFeedback).padding(vertical = 8.dp))
+            }
+
+            if (allWardrobeItems.isNotEmpty() && plannerSuggestion == null) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -552,8 +634,14 @@ fun HomeScreen(
                         .background(CardElevated)
                         .border(1.dp, CardBorder, RoundedCornerShape(14.dp))
                         .clickable {
-                            viewModel.saveRecommendation {
-                                Toast.makeText(context, "Wardrobe look saved", Toast.LENGTH_SHORT).show()
+                                    if (plannerSuggestion != null) {
+                                        plannerViewModel.saveWeatherRecommendation(plannerSuggestion!!) { created ->
+                                            Toast.makeText(context, if (created) "Weather recommendation saved" else "This recommendation is already saved", Toast.LENGTH_SHORT).show()
+                                        }
+                                    } else {
+                                        viewModel.saveRecommendation {
+                                            Toast.makeText(context, "Wardrobe look saved", Toast.LENGTH_SHORT).show()
+                                        }
                             }
                         }
                         .padding(14.dp),
@@ -616,6 +704,17 @@ fun HomeScreen(
             onDismiss = { activeSwapSlot = null }
         )
     }
+}
+
+private fun homeWeatherEmoji(code: Int?): String = when (code) {
+    0 -> "\u2600\uFE0F"
+    1, 2 -> "\uD83C\uDF24\uFE0F"
+    3 -> "\u2601\uFE0F"
+    45, 48 -> "\uD83C\uDF2B\uFE0F"
+    51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82 -> "\uD83C\uDF27\uFE0F"
+    71, 73, 75, 77, 85, 86 -> "\u2744\uFE0F"
+    95, 96, 99 -> "\u26C8\uFE0F"
+    else -> "\u2601\uFE0F"
 }
 
 @Composable

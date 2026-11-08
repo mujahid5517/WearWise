@@ -124,6 +124,10 @@ import com.example.ui.theme.TextSecondary
 import com.example.ui.theme.WarningContainer
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import org.json.JSONArray
+import org.json.JSONObject
+import java.time.LocalTime
+import java.time.ZoneId
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
@@ -134,19 +138,35 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import com.example.data.local.AppDatabase
 import java.time.DayOfWeek
 import androidx.compose.foundation.layout.heightIn
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.collectLatest
+
+private data class RecommendationInputs(
+    val clothes: List<ClothingItem>,
+    val history: List<WearHistory>,
+    val variation: Int,
+    val date: LocalDate,
+    val schedules: List<WeeklyScheduleItem>
+)
+
+private const val WEATHER_STALE_AFTER_MS = 30 * 60 * 1000L
 
 class PlannerViewModel(
     private val weeklyPlannerUseCase: WeeklyPlannerUseCase,
     manageWardrobeUseCase: ManageWardrobeUseCase,
     private val outfitRepository: OutfitRepository,
     private val weatherUseCase: GetWeatherUseCase,
-    context: Context
+    context: Context,
+    private val isOnline: StateFlow<Boolean>? = null
 ) : ViewModel() {
 
-    private val reminderScheduler = OutfitReminderScheduler(context.applicationContext)
+    private val appContext = context.applicationContext
+    private val preferences = appContext.getSharedPreferences("wearwise_weather_recommendations", Context.MODE_PRIVATE)
+    private val reminderScheduler = OutfitReminderScheduler(appContext)
     private val _schedules = MutableStateFlow<List<WeeklyScheduleItem>>(emptyList())
     val schedules: StateFlow<List<WeeklyScheduleItem>> = _schedules.asStateFlow()
     val wardrobeItems: StateFlow<List<ClothingItem>> = manageWardrobeUseCase.getAllItems()
@@ -172,29 +192,52 @@ class PlannerViewModel(
     private val _citySearchError = MutableStateFlow<String?>(null)
     val citySearchError: StateFlow<String?> = _citySearchError.asStateFlow()
     private val _variation = MutableStateFlow(0)
-    val recommendation = combine(_weather, wardrobeItems, wearHistory, _variation, _selectedDate) { forecast, clothes, history, variation, date ->
-        if (forecast == null) null else {
-            val day = forecast.daily.firstOrNull { it.date == date.toString() }
-            if (day == null) return@combine null
-            val conditions = forecast.copy(
-                temperatureC = day.highC ?: forecast.temperatureC,
-                feelsLikeC = day.apparentHighC ?: day.highC ?: forecast.feelsLikeC,
-                precipitationProbability = day.precipitationProbability ?: forecast.precipitationProbability,
-                precipitationMm = if (date == LocalDate.now()) forecast.precipitationMm else 0.0,
-                windKmh = day.maxWindKmh ?: forecast.windKmh,
-                weatherCode = day.weatherCode ?: forecast.weatherCode
-            )
-            WardrobeWeatherRecommender.recommend(conditions, clothes, history, variation)
-        }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
-    private val _error = MutableStateFlow<String?>(null)
-    val error: StateFlow<String?> = _error.asStateFlow()
+    private val _fahrenheit = MutableStateFlow(preferences.getBoolean(KEY_FAHRENHEIT, false))
+    val fahrenheit: StateFlow<Boolean> = _fahrenheit.asStateFlow()
     private val _aiWeatherOutfit = MutableStateFlow<Outfit?>(null)
     val aiWeatherOutfit: StateFlow<Outfit?> = _aiWeatherOutfit.asStateFlow()
     private val _aiWeatherLoading = MutableStateFlow(false)
     val aiWeatherLoading: StateFlow<Boolean> = _aiWeatherLoading.asStateFlow()
     private val _aiWeatherError = MutableStateFlow<String?>(null)
     val aiWeatherError: StateFlow<String?> = _aiWeatherError.asStateFlow()
+    private val recommendationInputs = combine(
+        wardrobeItems, wearHistory, _variation, _selectedDate, _schedules
+    ) { clothes, history, variation, date, scheduleList ->
+        RecommendationInputs(clothes, history, variation, date, scheduleList)
+    }
+    val recommendation = combine(_weather, recommendationInputs) { forecast, input ->
+        val saved = savedRecommendation(input.date, input.clothes)
+        if (forecast == null) {
+            saved
+        } else {
+            val plan = input.schedules.firstOrNull { it.dateIso == input.date.toString() }
+            val selection = selectPlannerWeather(forecast, input.date, plan?.activityTimeMinutes)
+                ?: return@combine saved
+            WardrobeWeatherRecommender.recommend(
+                conditions = selection.first,
+                clothes = input.clothes,
+                history = input.history,
+                variation = input.variation,
+                occasion = plan?.occasion ?: "Everyday",
+                forecastTime = selection.second,
+                date = input.date.toString()
+            )
+        }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+    val activeRecommendation = combine(recommendation, _aiWeatherOutfit) { suggestion, aiOutfit ->
+        if (suggestion == null || aiOutfit == null) {
+            suggestion
+        } else {
+            suggestion.copy(
+                title = aiOutfit.title,
+                items = aiOutfit.items,
+                reason = "AI selected this combination for ${aiOutfit.occasion.lowercase()}: ${aiOutfit.rationale}",
+                occasion = aiOutfit.occasion
+            )
+        }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+    private val _error = MutableStateFlow<String?>(null)
+    val error: StateFlow<String?> = _error.asStateFlow()
 
     init {
         loadSchedule()
@@ -204,6 +247,20 @@ class PlannerViewModel(
                 saved == null || (cached.location?.latitude == saved.latitude && cached.location?.longitude == saved.longitude)
             }
             saved?.let { refreshWeather(it, false) }
+        }
+        viewModelScope.launch {
+            activeRecommendation.collectLatest { suggestion ->
+                if (suggestion != null && suggestion.items.isNotEmpty()) saveRecommendationSnapshot(suggestion)
+            }
+        }
+        isOnline?.let { connectivity ->
+            viewModelScope.launch {
+                var previous = connectivity.value
+                connectivity.collect { online ->
+                    if (online && !previous) refreshWeather(force = true)
+                    previous = online
+                }
+            }
         }
     }
 
@@ -223,6 +280,12 @@ class PlannerViewModel(
     fun selectDate(date: LocalDate) { _selectedDate.value = date; _aiWeatherOutfit.value = null; _aiWeatherError.value = null }
     fun generateAnother() { _aiWeatherOutfit.value = null; _variation.value++ }
 
+    fun toggleTemperatureUnit() {
+        val next = !_fahrenheit.value
+        _fahrenheit.value = next
+        preferences.edit().putBoolean(KEY_FAHRENHEIT, next).apply()
+    }
+
     fun refreshWeather(location: WeatherLocation? = _location.value, force: Boolean = true) {
         if (location == null) {
             _weatherError.value = "Choose a city or use your current location to see live weather."
@@ -238,8 +301,10 @@ class PlannerViewModel(
                 val age = System.currentTimeMillis() - (_weather.value?.fetchedAtEpochMillis ?: 0L)
                 if (age > WEATHER_STALE_AFTER_MS) _weatherError.value = "Offline: showing the last saved weather update."
             } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                _weather.value = _weather.value?.copy(isCached = true)
                 _weatherError.value = if (_weather.value == null) {
-                    "Weather could not be loaded. Check your connection and try again."
+                    "Weather unavailable: ${error.message ?: "check your connection and try again."}"
                 } else "Offline: showing the last weather update. ${error.message.orEmpty()}"
             } finally { _weatherLoading.value = false }
         }
@@ -260,6 +325,7 @@ class PlannerViewModel(
                 _cityResults.value = weatherUseCase.search(query)
                 if (_cityResults.value.isEmpty()) _citySearchError.value = "No matching city found. Try adding a region or country."
             } catch (error: Exception) {
+                if (error is CancellationException) throw error
                 _citySearchError.value = "Could not search locations. Check your connection."
                 _cityResults.value = emptyList()
             } finally { _citySearchLoading.value = false }
@@ -275,21 +341,55 @@ class PlannerViewModel(
         date: LocalDate? = null,
         reminderEnabled: Boolean = false,
         reminderMinutes: Int = 480,
+        activityTimeMinutes: Int = 9 * 60,
         onSaved: (Outfit) -> Unit
     ) {
         if (items.isEmpty() || title.isBlank()) return
+        if (date != null) _aiWeatherOutfit.value = null
         viewModelScope.launch {
             try {
                 val outfit = Outfit(
-                title = title.trim(), occasion = occasion, style = "Personal wardrobe",
-                rationale = "Created from items in your WearWise wardrobe.", items = items
+                    title = title.trim(),
+                    occasion = occasion,
+                    style = "Personal wardrobe",
+                    rationale = "Created from items in your WearWise wardrobe.",
+                    items = items
                 )
                 val id = outfitRepository.saveOutfit(outfit)
                 val savedOutfit = outfit.copy(id = id)
-                date?.let { scheduleOutfit(savedOutfit, it, occasion, reminderEnabled, reminderMinutes) }
+                date?.let { scheduleOutfit(savedOutfit, it, occasion, reminderEnabled, reminderMinutes, activityTimeMinutes) }
                 onSaved(savedOutfit)
             } catch (error: Exception) {
                 _error.value = error.message ?: "Could not save this outfit plan."
+            }
+        }
+    }
+
+    fun saveWeatherRecommendation(suggestion: WeatherOutfitSuggestion, onSaved: (Boolean) -> Unit) {
+        if (suggestion.items.isEmpty()) return
+        viewModelScope.launch {
+            try {
+                val location = _weather.value?.location
+                val marker = "wearwise-weather:${suggestion.date}:${location?.latitude}:${location?.longitude}"
+                val existing = outfitRepository.getAllOutfits().first().firstOrNull { it.weatherTag == marker }
+                if (existing != null) {
+                    onSaved(false)
+                    return@launch
+                }
+                val outfit = Outfit(
+                    title = suggestion.title,
+                    occasion = suggestion.occasion,
+                    style = "Weather-ready",
+                    rationale = suggestion.reason,
+                    weatherTag = marker,
+                    items = suggestion.items,
+                    ownerUid = suggestion.items.first().ownerUid
+                )
+                outfitRepository.saveOutfit(outfit)
+                onSaved(true)
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                _error.value = error.message ?: "Could not save this weather recommendation."
             }
         }
     }
@@ -322,7 +422,14 @@ class PlannerViewModel(
         }
     }
 
-    private suspend fun scheduleOutfit(outfit: Outfit, date: LocalDate, occasion: String, reminderEnabled: Boolean, reminderMinutes: Int) {
+    private suspend fun scheduleOutfit(
+        outfit: Outfit,
+        date: LocalDate,
+        occasion: String,
+        reminderEnabled: Boolean,
+        reminderMinutes: Int,
+        activityTimeMinutes: Int = 9 * 60
+    ) {
         val forecast = _weather.value?.daily?.firstOrNull { it.date == date.toString() }
         val item = WeeklyScheduleItem(
             dayOfWeek = date.dayOfWeek.name.take(3), dateDay = date.dayOfMonth,
@@ -333,6 +440,7 @@ class PlannerViewModel(
             isToday = date == LocalDate.now(), isWorn = false, isUnscheduled = false,
             dateIso = date.toString(), outfitId = outfit.id, occasion = occasion,
             reminderEnabled = reminderEnabled, reminderTimeMinutes = reminderMinutes,
+            activityTimeMinutes = activityTimeMinutes.coerceIn(0, 23 * 60 + 59),
             notes = "", ownerUid = outfit.ownerUid
         )
         val id = weeklyPlannerUseCase.saveScheduleItem(item)
@@ -361,10 +469,47 @@ class PlannerViewModel(
 
     fun clearError() { _error.value = null }
 
+    private fun savedRecommendation(date: LocalDate, clothes: List<ClothingItem>): WeatherOutfitSuggestion? {
+        val snapshot = preferences.getString("snapshot:$date", null) ?: return null
+        return runCatching {
+            val saved = JSONObject(snapshot)
+            val ids = saved.getJSONArray("itemIds").let { array ->
+                (0 until array.length()).map { array.getLong(it) }
+            }
+            val itemsById = clothes.associateBy { it.id }
+            val items = ids.mapNotNull(itemsById::get)
+            if (items.size != ids.size) return null
+            WeatherOutfitSuggestion(
+                conditionSummary = saved.optString("conditionSummary"),
+                items = items,
+                reason = saved.optString("reason"),
+                title = saved.optString("title"),
+                occasion = saved.optString("occasion", "Everyday"),
+                forecastTime = saved.optString("forecastTime"),
+                date = date.toString(),
+                locationName = saved.optString("locationName"),
+                isCached = true
+            )
+        }.getOrNull()
+    }
+
+    private fun saveRecommendationSnapshot(suggestion: WeatherOutfitSuggestion) {
+        val snapshot = JSONObject()
+            .put("itemIds", JSONArray(suggestion.items.map { it.id }))
+            .put("conditionSummary", suggestion.conditionSummary)
+            .put("reason", suggestion.reason)
+            .put("title", suggestion.title)
+            .put("occasion", suggestion.occasion)
+            .put("forecastTime", suggestion.forecastTime)
+            .put("locationName", suggestion.locationName)
+        preferences.edit().putString("snapshot:${suggestion.date}", snapshot.toString()).apply()
+    }
+
     fun generateAiWeatherOutfit(occasion: String = "Everyday") {
         val forecast = _weather.value ?: run { _aiWeatherError.value = "Load weather before asking AI."; return }
         val date = _selectedDate.value
-        val day = forecast.daily.firstOrNull { it.date == date.toString() } ?: run {
+        val plan = _schedules.value.firstOrNull { it.dateIso == date.toString() }
+        val selection = selectPlannerWeather(forecast, date, plan?.activityTimeMinutes) ?: run {
             _aiWeatherError.value = "AI weather styling is available for dates in the current forecast."
             return
         }
@@ -372,23 +517,86 @@ class PlannerViewModel(
             _aiWeatherLoading.value = true
             _aiWeatherError.value = null
             try {
-                val selectedConditions = forecast.copy(
-                    temperatureC = day.highC ?: forecast.temperatureC,
-                    feelsLikeC = day.apparentHighC ?: day.highC ?: forecast.feelsLikeC,
-                    precipitationProbability = day.precipitationProbability ?: forecast.precipitationProbability,
-                    precipitationMm = if (date == LocalDate.now()) forecast.precipitationMm else 0.0,
-                    windKmh = day.maxWindKmh ?: forecast.windKmh,
-                    weatherCode = day.weatherCode ?: forecast.weatherCode
-                )
-                _aiWeatherOutfit.value = outfitRepository.generateWeatherRecommendation(selectedConditions, occasion)
+                _aiWeatherOutfit.value = outfitRepository.generateWeatherRecommendation(selection.first, plan?.occasion ?: occasion)
                 if (_aiWeatherOutfit.value == null) _aiWeatherError.value = "AI styling is unavailable. Add a Gemini API key in Profile; the local weather recommendation still works."
             } catch (error: Exception) {
+                if (error is CancellationException) throw error
                 _aiWeatherError.value = error.message ?: "AI styling failed. The local weather recommendation is still available."
             } finally { _aiWeatherLoading.value = false }
         }
     }
 
-    companion object { private const val WEATHER_STALE_AFTER_MS = 30 * 60 * 1000L }
+    companion object {
+        private const val KEY_FAHRENHEIT = "fahrenheit"
+    }
+}
+
+private fun Double?.weatherTemperature(fahrenheit: Boolean): String {
+    val value = this ?: return if (fahrenheit) "–°F" else "–°C"
+    val displayValue = if (fahrenheit) value * 9.0 / 5.0 + 32.0 else value
+    return "${displayValue.toInt()}°${if (fahrenheit) "F" else "C"}"
+}
+
+internal fun selectPlannerWeather(
+    forecast: WeatherForecast,
+    date: LocalDate,
+    activityTimeMinutes: Int?
+): Pair<WeatherForecast, String>? {
+    val zone = runCatching { ZoneId.of(forecast.timezone) }.getOrDefault(ZoneId.of("UTC"))
+    val target = when {
+        activityTimeMinutes != null -> LocalDateTime.of(
+            date,
+            LocalTime.of(activityTimeMinutes / 60, activityTimeMinutes % 60)
+        )
+        date == LocalDate.now(zone) -> LocalDateTime.now(zone)
+        else -> LocalDateTime.of(date, LocalTime.NOON)
+    }
+    val hourly = forecast.hourly.asSequence()
+        .mapNotNull { item ->
+            val time = runCatching { LocalDateTime.parse(item.time) }.getOrNull()
+            if (time?.toLocalDate() == date) time to item else null
+        }
+        .minByOrNull { (time, _) ->
+            kotlin.math.abs(java.time.Duration.between(target, time).toMinutes())
+        }
+    if (hourly != null) {
+        val (time, item) = hourly
+        return forecast.copy(
+            temperatureC = item.temperatureC,
+            feelsLikeC = item.feelsLikeC,
+            precipitationProbability = item.precipitationProbability,
+            precipitationMm = item.precipitationMm,
+            windKmh = item.windKmh,
+            weatherCode = item.weatherCode,
+            humidityPercent = item.humidityPercent,
+            cloudCoverPercent = item.cloudCoverPercent
+        ) to if (activityTimeMinutes != null) {
+            "${time.toLocalTime().format(DateTimeFormatter.ofPattern("HH:mm"))} local forecast"
+        } else if (date == LocalDate.now(zone)) {
+            "Current-hour forecast"
+        } else {
+            "${time.toLocalTime().format(DateTimeFormatter.ofPattern("HH:mm"))} local forecast"
+        }
+    }
+
+    if (date == LocalDate.now(zone) || activityTimeMinutes != null) {
+        val fallback = if (activityTimeMinutes != null) {
+            "Current conditions (hourly forecast unavailable; planned for ${"%02d:%02d".format(activityTimeMinutes / 60, activityTimeMinutes % 60)})"
+        } else {
+            "Current conditions (hourly forecast unavailable)"
+        }
+        return forecast to fallback
+    }
+
+    val day = forecast.daily.firstOrNull { it.date == date.toString() } ?: return null
+    return forecast.copy(
+        temperatureC = day.highC ?: forecast.temperatureC,
+        feelsLikeC = day.apparentHighC ?: day.highC ?: forecast.feelsLikeC,
+        precipitationProbability = day.precipitationProbability ?: forecast.precipitationProbability,
+        precipitationMm = day.precipitationMm ?: forecast.precipitationMm,
+        windKmh = day.maxWindKmh ?: forecast.windKmh,
+        weatherCode = day.weatherCode ?: forecast.weatherCode
+    ) to "Daily forecast (hourly forecast unavailable)"
 }
 
 @Composable
@@ -792,8 +1000,9 @@ fun PlannerScreen(
     val weather by viewModel.weather.collectAsState()
     val loading by viewModel.weatherLoading.collectAsState()
     val weatherError by viewModel.weatherError.collectAsState()
+    val fahrenheit by viewModel.fahrenheit.collectAsState()
     val location by viewModel.location.collectAsState()
-    val suggestion by viewModel.recommendation.collectAsState()
+    val suggestion by viewModel.activeRecommendation.collectAsState()
     val aiWeatherOutfit by viewModel.aiWeatherOutfit.collectAsState()
     val aiWeatherLoading by viewModel.aiWeatherLoading.collectAsState()
     val aiWeatherError by viewModel.aiWeatherError.collectAsState()
@@ -802,6 +1011,7 @@ fun PlannerScreen(
     val error by viewModel.error.collectAsState()
     var planDialog by remember { mutableStateOf(false) }
     var cityDialog by remember { mutableStateOf(false) }
+    var showRecommendationDetails by remember { mutableStateOf(false) }
     var initialItems by remember { mutableStateOf(emptyList<ClothingItem>()) }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
         if (grants.values.any { it }) requestPlannerLocation(context, viewModel)
@@ -831,13 +1041,7 @@ fun PlannerScreen(
     val selectedPlan = plansByDate[selectedDate.toString()]
     val outfit = selectedPlan?.outfitId?.let { id -> savedOutfits.firstOrNull { it.id == id } }
     val selectedForecast = weather?.daily?.firstOrNull { it.date == selectedDate.toString() }
-    val visibleSuggestion = aiWeatherOutfit?.let { ai ->
-        WeatherOutfitSuggestion(
-            items = ai.items,
-            reason = "AI selected this combination for ${ai.occasion.lowercase()}: ${ai.rationale}",
-            conditionSummary = selectedForecast?.let(::dailyWeatherSummary) ?: suggestion?.conditionSummary.orEmpty()
-        )
-    } ?: suggestion
+    val visibleSuggestion = suggestion
 
     Column(Modifier.fillMaxSize().background(DarkNavyBg).testTag("planner_screen")) {
         WearWiseTopBar(title = "WEARWISE", subtitle = "WEEKLY STYLE PLANNER", userAvatarRes = WearWiseDrawables.UserAvatar, onAvatarClick = onNavigateToProfile)
@@ -845,9 +1049,18 @@ fun PlannerScreen(
             Text("Plan your week", fontSize = 25.sp, fontWeight = FontWeight.ExtraBold, color = TextPrimary)
             Text(LocalDate.now().format(DateTimeFormatter.ofPattern("EEEE, d MMMM yyyy", Locale.getDefault())), color = TextSecondary, fontSize = 12.sp)
             Spacer(Modifier.height(14.dp))
-            WeatherDashboardCard(weather, location, loading, weatherError,
+            WeatherDashboardCard(weather, location, loading, weatherError, visibleSuggestion, fahrenheit,
                 onRefresh = { viewModel.refreshWeather(force = true) },
-                onChooseCity = { cityDialog = true }, onUseLocation = requestLocation)
+                onChooseCity = { cityDialog = true }, onUseLocation = requestLocation,
+                onToggleUnit = viewModel::toggleTemperatureUnit,
+                onSaveRecommendation = {
+                    visibleSuggestion?.let { suggestionToSave ->
+                        viewModel.saveWeatherRecommendation(suggestionToSave) { created ->
+                            Toast.makeText(context, if (created) "Weather recommendation saved" else "This recommendation is already saved", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                },
+                onViewRecommendation = { showRecommendationDetails = true })
             Spacer(Modifier.height(14.dp))
             Surface(
                 modifier = Modifier
@@ -929,7 +1142,7 @@ fun PlannerScreen(
                     ) {
                         Text(date.dayOfWeek.name.take(3), color = if (isSelected) Color.White else TextSecondary, fontWeight = FontWeight.Bold, fontSize = 10.sp)
                         Text(date.dayOfMonth.toString(), color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                        Text(dayForecast?.highC?.let { "$it°" } ?: "—", color = if (isSelected) Color.White else TextSecondary, fontSize = 10.sp)
+                        Text(dayForecast?.highC.weatherTemperature(fahrenheit), color = if (isSelected) Color.White else TextSecondary, fontSize = 10.sp)
                         Text(if (isPlanned) "●" else "○", color = if (isPlanned) CoutureAmber else TextMuted, fontSize = 9.sp)
                     }
                 }
@@ -938,7 +1151,7 @@ fun PlannerScreen(
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Column {
                     Text(selectedDate.format(DateTimeFormatter.ofPattern("EEEE, d MMMM", Locale.getDefault())), color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                    Text(selectedForecast?.let { "${WeatherDescriptions.describe(it.weatherCode ?: 0)} · high ${it.highC ?: "–"}° / low ${it.lowC ?: "–"}° · rain ${it.precipitationProbability ?: "–"}%" } ?: "No forecast available for this date", color = TextSecondary, fontSize = 11.sp)
+                    Text(selectedForecast?.let { "${WeatherDescriptions.describe(it.weatherCode ?: 0)} · high ${it.highC.weatherTemperature(fahrenheit)} / low ${it.lowC.weatherTemperature(fahrenheit)} · rain ${it.precipitationProbability ?: "–"}%" } ?: "No forecast available for this date", color = TextSecondary, fontSize = 11.sp)
                 }
                 IconButton(onClick = { initialItems = outfit?.items.orEmpty(); planDialog = true }) {
                     Icon(if (selectedPlan == null) Icons.Default.AutoAwesome else Icons.Default.Edit, "Add or edit outfit plan", tint = CoutureAmber)
@@ -992,12 +1205,12 @@ fun PlannerScreen(
                     aiActive = aiWeatherOutfit != null,
                     onAskAi = { viewModel.generateAiWeatherOutfit() },
                     onAddToPlan = { initialItems = visibleSuggestion!!.items; planDialog = true },
-                    onSave = { viewModel.saveWardrobeOutfit("Weather-ready outfit", "Everyday", visibleSuggestion!!.items) { Toast.makeText(context, "Outfit saved", Toast.LENGTH_SHORT).show() } },
+                    onSave = { viewModel.saveWeatherRecommendation(visibleSuggestion!!) { created -> Toast.makeText(context, if (created) "Weather recommendation saved" else "This recommendation is already saved", Toast.LENGTH_SHORT).show() } },
                     onWear = {
                         if (selectedDate == LocalDate.now()) viewModel.saveSuggestionAsWorn(visibleSuggestion!!.items, "Everyday") { Toast.makeText(context, "Wear history updated", Toast.LENGTH_SHORT).show() }
                         else Toast.makeText(context, "Select today to record an outfit as worn.", Toast.LENGTH_SHORT).show()
                     },
-                    onTryOn = { onUseInTryOn(Outfit(title = "Weather-ready outfit", occasion = "Everyday", style = "Weather-ready", rationale = visibleSuggestion!!.reason, items = visibleSuggestion!!.items)) }
+                    onTryOn = { onUseInTryOn(Outfit(title = visibleSuggestion!!.title, occasion = visibleSuggestion!!.occasion, style = "Weather-ready", rationale = visibleSuggestion!!.reason, items = visibleSuggestion!!.items)) }
                 )
             }
             if (!aiWeatherError.isNullOrBlank()) Text(aiWeatherError!!, color = TextSecondary, fontSize = 10.sp, modifier = Modifier.padding(top = 3.dp))
@@ -1020,8 +1233,8 @@ fun PlannerScreen(
                 if (android.os.Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             },
             onDismiss = { planDialog = false },
-            onSave = { title, occasion, chosen, reminder, minutes ->
-                viewModel.saveWardrobeOutfit(title, occasion, chosen, date = selectedDate, reminderEnabled = reminder, reminderMinutes = minutes) {
+            onSave = { title, occasion, chosen, reminder, minutes, activityTime ->
+                viewModel.saveWardrobeOutfit(title, occasion, chosen, date = selectedDate, reminderEnabled = reminder, reminderMinutes = minutes, activityTimeMinutes = activityTime) {
                     planDialog = false
                     Toast.makeText(context, "Outfit planned for ${selectedDate.format(DateTimeFormatter.ofPattern("EEE, d MMM"))}", Toast.LENGTH_SHORT).show()
                 }
@@ -1029,6 +1242,41 @@ fun PlannerScreen(
         )
     }
     if (cityDialog) CitySearchDialog(viewModel, onDismiss = { cityDialog = false }, onChoose = { city -> cityDialog = false; viewModel.useLocation(city) })
+    if (showRecommendationDetails && visibleSuggestion != null) {
+        AlertDialog(
+            onDismissRequest = { showRecommendationDetails = false },
+            title = { Text(visibleSuggestion!!.title) },
+            text = {
+                Column {
+                    Text("${visibleSuggestion!!.locationName} · ${visibleSuggestion!!.forecastTime}", color = TextSecondary, fontSize = 11.sp)
+                    Text(visibleSuggestion!!.reason, color = TextPrimary, modifier = Modifier.padding(vertical = 8.dp))
+                    if (visibleSuggestion!!.items.isNotEmpty()) LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(visibleSuggestion!!.items) { item ->
+                            val image = item.imageUri ?: item.imageUrl ?: item.imageRes
+                            Column(Modifier.width(72.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                if (image != null) AsyncImage(image, item.name, Modifier.size(60.dp).clip(RoundedCornerShape(8.dp)), contentScale = ContentScale.Crop)
+                                Text(item.name, color = TextSecondary, fontSize = 9.sp)
+                            }
+                        }
+                    } else {
+                        Text("Add suitable clothing to your wardrobe to get a complete outfit.", color = TextSecondary)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.saveWeatherRecommendation(visibleSuggestion!!) { created ->
+                            Toast.makeText(context, if (created) "Weather recommendation saved" else "This recommendation is already saved", Toast.LENGTH_SHORT).show()
+                            showRecommendationDetails = false
+                        }
+                    },
+                    enabled = visibleSuggestion!!.items.isNotEmpty()
+                ) { Text("Save outfit") }
+            },
+            dismissButton = { TextButton(onClick = { showRecommendationDetails = false }) { Text("Close") } }
+        )
+    }
 }
 
 private fun dailyWeatherSummary(day: WeatherDailyForecast): String =
@@ -1066,7 +1314,7 @@ private fun requestPlannerLocation(context: Context, viewModel: PlannerViewModel
                 else {
                     val geocoder = Geocoder(context, Locale.getDefault())
                     if (Geocoder.isPresent()) {
-                        java.util.concurrent.Executors.newSingleThreadExecutor().execute {
+                        Thread({
                             val result = runCatching {
                                 @Suppress("DEPRECATION")
                                 geocoder.getFromLocation(location.latitude, location.longitude, 1)?.firstOrNull()
@@ -1084,7 +1332,7 @@ private fun requestPlannerLocation(context: Context, viewModel: PlannerViewModel
                                 longitude = location.longitude
                             )
                             android.os.Handler(android.os.Looper.getMainLooper()).post { viewModel.useLocation(weatherLocation) }
-                        }
+                        }, "planner-reverse-geocode").start()
                     } else viewModel.useLocation(WeatherLocation("Current location", latitude = location.latitude, longitude = location.longitude))
                 }
             }
@@ -1094,19 +1342,16 @@ private fun requestPlannerLocation(context: Context, viewModel: PlannerViewModel
         token.cancel()
         Toast.makeText(context, "Location access was revoked. Choose a city manually.", Toast.LENGTH_LONG).show()
     }
-    LocationServices.getFusedLocationProviderClient(context).getCurrentLocation(Priority.PRIORITY_BALANCED_POWER_ACCURACY, token.token)
-        .addOnSuccessListener { loc ->
-            if (loc == null) Toast.makeText(context, "Could not get a location fix. Choose a city manually.", Toast.LENGTH_LONG).show()
-            else viewModel.useLocation(WeatherLocation(latitude = loc.latitude, longitude = loc.longitude, name = "Current location"))
-        }
-        .addOnFailureListener { Toast.makeText(context, "Location unavailable. Choose a city manually.", Toast.LENGTH_LONG).show() }
 }
 
 @Composable
 private fun WeatherDashboardCard(
     weather: WeatherForecast?, location: WeatherLocation?, loading: Boolean, error: String?,
-    onRefresh: () -> Unit, onChooseCity: () -> Unit, onUseLocation: () -> Unit
+    suggestion: WeatherOutfitSuggestion?, fahrenheit: Boolean,
+    onRefresh: () -> Unit, onChooseCity: () -> Unit, onUseLocation: () -> Unit,
+    onToggleUnit: () -> Unit, onSaveRecommendation: () -> Unit, onViewRecommendation: () -> Unit
 ) {
+    val context = LocalContext.current
     WearWiseCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -1130,26 +1375,28 @@ private fun WeatherDashboardCard(
                     Text(weatherEmoji(weather.weatherCode), fontSize = 36.sp)
                     Spacer(Modifier.width(10.dp))
                     Column(Modifier.weight(1f)) {
-                        Text("${weather.temperatureC?.toInt() ?: "–"}°C", color = TextPrimary, fontSize = 30.sp, fontWeight = FontWeight.ExtraBold)
+                        Text(weather.temperatureC.weatherTemperature(fahrenheit), color = TextPrimary, fontSize = 30.sp, fontWeight = FontWeight.ExtraBold)
                         Text(WeatherDescriptions.describe(weather.weatherCode), color = TextSecondary, fontSize = 12.sp)
                     }
                     Column(horizontalAlignment = Alignment.End) {
-                        Text("Feels ${weather.feelsLikeC?.toInt() ?: "–"}°", color = TextSecondary, fontSize = 11.sp)
+                        Text("Feels ${weather.feelsLikeC.weatherTemperature(fahrenheit)}", color = TextSecondary, fontSize = 11.sp)
                         Text("Humidity ${weather.humidityPercent?.let { "$it%" } ?: "–"}", color = TextSecondary, fontSize = 11.sp)
                         Text("Wind ${weather.windKmh?.toInt()?.let { "$it km/h" } ?: "–"}", color = TextSecondary, fontSize = 11.sp)
+                        Text("Cloud ${weather.cloudCoverPercent?.let { "$it%" } ?: "–"}", color = TextSecondary, fontSize = 11.sp)
                     }
                 }
                 weather.daily.firstOrNull()?.let { today ->
-                    Text("Today · high ${today.highC?.toInt() ?: "–"}° / low ${today.lowC?.toInt() ?: "–"}° · rainfall ${weather.precipitationMm?.let { "${it} mm" } ?: "–"} · rain chance ${weather.precipitationProbability?.let { "$it%" } ?: "–"}", color = TextSecondary, fontSize = 11.sp)
+                    Text("Today · high ${today.highC.weatherTemperature(fahrenheit)} / low ${today.lowC.weatherTemperature(fahrenheit)} · precip ${today.precipitationMm?.let { "${it} mm" } ?: "–"} · rain chance ${today.precipitationProbability?.let { "$it%" } ?: "–"}", color = TextSecondary, fontSize = 11.sp)
                 }
                 if (weather.hourly.isNotEmpty()) {
                     Spacer(Modifier.height(8.dp)); Text("HOURLY", color = TextSecondary, fontWeight = FontWeight.Bold, fontSize = 9.sp)
+                    val locationNow = LocalDateTime.now(runCatching { ZoneId.of(weather.timezone) }.getOrDefault(ZoneId.of("UTC")))
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        items(weather.hourly.filter { it.time >= LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH")) }.take(12)) { hour ->
+                        items(weather.hourly.filter { runCatching { LocalDateTime.parse(it.time) >= locationNow }.getOrDefault(false) }.take(12)) { hour ->
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Text(hour.time.takeLast(5), color = TextMuted, fontSize = 9.sp)
                                 Text(weatherEmoji(hour.weatherCode), fontSize = 16.sp)
-                                Text("${hour.temperatureC?.toInt() ?: "–"}°", color = TextPrimary, fontSize = 10.sp)
+                                Text(hour.temperatureC.weatherTemperature(fahrenheit), color = TextPrimary, fontSize = 10.sp)
                                 val prob = hour.precipitationProbability
                                 Text(if (prob != null) "$prob%" else "–", color = TextMuted, fontSize = 8.sp)
                             }
@@ -1162,16 +1409,43 @@ private fun WeatherDashboardCard(
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(runCatching { LocalDate.parse(day.date).format(DateTimeFormatter.ofPattern("EEE d", Locale.getDefault())) }.getOrDefault(day.date), color = TextMuted, fontSize = 9.sp)
                             Text(weatherEmoji(day.weatherCode), fontSize = 16.sp)
-                            Text("${day.highC?.toInt() ?: "–"}° / ${day.lowC?.toInt() ?: "–"}°", color = TextPrimary, fontSize = 9.sp)
+                            Text("${day.highC.weatherTemperature(fahrenheit)} / ${day.lowC.weatherTemperature(fahrenheit)}", color = TextPrimary, fontSize = 9.sp)
                             Text("${day.precipitationProbability?.let { "$it%" } ?: "–"} rain", color = TextMuted, fontSize = 8.sp)
                         }
                     }
                 }
-                Text("Updated ${java.time.Instant.ofEpochMilli(weather.fetchedAtEpochMillis).atZone(java.time.ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("HH:mm"))} · Weather data by Open-Meteo.com", color = TextMuted, fontSize = 9.sp)
+                val weatherZone = runCatching { ZoneId.of(weather.timezone) }.getOrDefault(ZoneId.of("UTC"))
+                val age = System.currentTimeMillis() - weather.fetchedAtEpochMillis
+                val freshness = if (weather.isCached || age > WEATHER_STALE_AFTER_MS) "Cached${if (age > WEATHER_STALE_AFTER_MS) " · stale" else ""}" else "Live"
+                Text("$freshness · Updated ${java.time.Instant.ofEpochMilli(weather.fetchedAtEpochMillis).atZone(weatherZone).format(DateTimeFormatter.ofPattern("HH:mm"))} local · Weather data by Open-Meteo.com", color = TextMuted, fontSize = 9.sp)
                 if (!error.isNullOrBlank()) Text(error, color = CoutureAmber, fontSize = 10.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     TextButton(onClick = onUseLocation) { Text("Use current location", fontSize = 10.sp) }
                     TextButton(onClick = onChooseCity) { Text("Change city", fontSize = 10.sp) }
+                    TextButton(onClick = onToggleUnit) { Text(if (fahrenheit) "°F" else "°C", fontSize = 10.sp) }
+                }
+                suggestion?.let {
+                    Spacer(Modifier.height(8.dp))
+                    Text(if (it.date == LocalDate.now(weatherZone).toString()) "TODAY'S RECOMMENDED OUTFIT" else "WEATHER-READY OUTFIT", color = CoutureAmber, fontWeight = FontWeight.Bold, fontSize = 10.sp)
+                    Text(it.title, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp, modifier = Modifier.padding(top = 3.dp))
+                    if (it.items.isNotEmpty()) {
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp), modifier = Modifier.padding(vertical = 5.dp)) {
+                            items(it.items) { item ->
+                                val image: Any? = item.imageUri ?: item.imageUrl ?: item.imageRes ?: item.catalogAssetName?.let {
+                                    context.resources.getIdentifier(it, "drawable", context.packageName).takeIf { id -> id != 0 }
+                                }
+                                Column(Modifier.width(65.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                    if (image != null) AsyncImage(image, item.name, Modifier.size(54.dp).clip(RoundedCornerShape(8.dp)), contentScale = ContentScale.Crop)
+                                    Text(item.name, color = TextSecondary, fontSize = 8.sp, maxLines = 2)
+                                }
+                            }
+                        }
+                        Text(it.reason, color = TextSecondary, fontSize = 10.sp, maxLines = 2)
+                    } else Text(it.reason, color = TextSecondary, fontSize = 10.sp)
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        TextButton(onClick = onViewRecommendation) { Text("View details", fontSize = 10.sp) }
+                        TextButton(onClick = onSaveRecommendation, enabled = it.items.isNotEmpty()) { Text("Save outfit", fontSize = 10.sp) }
+                    }
                 }
             }
         }
@@ -1203,25 +1477,30 @@ private fun WeatherRecommendationCard(
     WearWiseCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp)) {
             Text(suggestion.conditionSummary, color = CoutureAmber, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 9.dp)) {
-                items(suggestion.items) { item ->
-                    Column(Modifier.width(78.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        val context = LocalContext.current
-                        val image: Any? = item.imageUri ?: item.imageUrl ?: item.imageRes ?: item.catalogAssetName?.let { context.resources.getIdentifier(it, "drawable", context.packageName).takeIf { id -> id != 0 } }
-                        if (image != null) AsyncImage(image, item.name, Modifier.size(68.dp).clip(RoundedCornerShape(12.dp)), contentScale = ContentScale.Crop)
-                        Text(item.name, color = TextPrimary, fontSize = 9.sp, maxLines = 2)
-                        Text(item.category, color = TextMuted, fontSize = 8.sp)
+            Text(suggestion.title, color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+            if (suggestion.items.isNotEmpty()) {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 9.dp)) {
+                    items(suggestion.items) { item ->
+                        Column(Modifier.width(78.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                            val context = LocalContext.current
+                            val image: Any? = item.imageUri ?: item.imageUrl ?: item.imageRes ?: item.catalogAssetName?.let { context.resources.getIdentifier(it, "drawable", context.packageName).takeIf { id -> id != 0 } }
+                            if (image != null) AsyncImage(image, item.name, Modifier.size(68.dp).clip(RoundedCornerShape(12.dp)), contentScale = ContentScale.Crop)
+                            Text(item.name, color = TextPrimary, fontSize = 9.sp, maxLines = 2)
+                            Text(item.category, color = TextMuted, fontSize = 8.sp)
+                        }
                     }
                 }
-            }
+            } else Text("Add suitable items to your wardrobe to get a complete outfit.", color = TextSecondary, fontSize = 10.sp, modifier = Modifier.padding(vertical = 6.dp))
             Text(suggestion.reason, color = TextSecondary, fontSize = 11.sp, lineHeight = 16.sp)
-            Text("Optional AI styling sends clothing names, categories, colors and forecast details to Gemini.", color = TextMuted, fontSize = 9.sp, lineHeight = 13.sp, modifier = Modifier.padding(top = 4.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
-                TextButton(onClick = onAddToPlan) { Text("Add to Planner") }
-                TextButton(onClick = onAskAi, enabled = !aiLoading) { Text(if (aiLoading) "AI styling…" else if (aiActive) "AI look ready" else "Ask AI") }
-                TextButton(onClick = onWear) { Text("Wear Today") }
-                TextButton(onClick = onSave) { Text("Save Outfit") }
-                TextButton(onClick = onTryOn) { Text("Try On") }
+            if (suggestion.items.isNotEmpty()) {
+                Text("Optional AI styling sends clothing names, categories, colors and forecast details to Gemini.", color = TextMuted, fontSize = 9.sp, lineHeight = 13.sp, modifier = Modifier.padding(top = 4.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                    TextButton(onClick = onAddToPlan) { Text("Add to Planner") }
+                    TextButton(onClick = onAskAi, enabled = !aiLoading) { Text(if (aiLoading) "AI styling…" else if (aiActive) "AI look ready" else "Ask AI") }
+                    TextButton(onClick = onWear) { Text("Wear Today") }
+                    TextButton(onClick = onSave) { Text("Save Outfit") }
+                    TextButton(onClick = onTryOn) { Text("Try On") }
+                }
             }
         }
     }
@@ -1269,13 +1548,14 @@ private fun PlanOutfitDialog(
     items: List<ClothingItem>, initialItems: List<ClothingItem>, date: LocalDate,
     onRequestNotificationPermission: () -> Unit,
     onDismiss: () -> Unit,
-    onSave: (String, String, List<ClothingItem>, Boolean, Int) -> Unit
+    onSave: (String, String, List<ClothingItem>, Boolean, Int, Int) -> Unit
 ) {
     val context = LocalContext.current
     var title by remember(date, initialItems) { mutableStateOf(initialItems.takeIf { it.isNotEmpty() }?.joinToString(" + ") { it.name } ?: "") }
     var occasion by remember(date) { mutableStateOf("Everyday") }
     var reminder by remember(date) { mutableStateOf(false) }
     var reminderMinutes by remember(date) { mutableStateOf(8 * 60) }
+    var activityTimeMinutes by remember(date) { mutableStateOf(9 * 60) }
     val selected = remember(date, initialItems) { mutableStateListOf<Long>().apply { addAll(initialItems.map { it.id }) } }
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1284,6 +1564,12 @@ private fun PlanOutfitDialog(
             Column(Modifier.fillMaxWidth()) {
                 OutlinedTextField(title, { title = it }, label = { Text("Outfit name") }, singleLine = true)
                 OutlinedTextField(occasion, { occasion = it }, label = { Text("Occasion") }, singleLine = true)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Activity time", color = TextSecondary, modifier = Modifier.weight(1f))
+                    TextButton(onClick = {
+                        TimePickerDialog(context, { _, hour, minute -> activityTimeMinutes = hour * 60 + minute }, activityTimeMinutes / 60, activityTimeMinutes % 60, false).show()
+                    }) { Text("%02d:%02d".format(activityTimeMinutes / 60, activityTimeMinutes % 60)) }
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(checked = reminder, onCheckedChange = { reminder = it; if (it) onRequestNotificationPermission() })
                     Text("Remind me", color = TextPrimary)
@@ -1298,7 +1584,10 @@ private fun PlanOutfitDialog(
                             if (item.id in selected) selected.remove(item.id) else selected.add(item.id)
                             if (title.isBlank()) title = item.name
                         }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                            val image = item.imageUri ?: item.imageUrl ?: item.imageRes
+                            val context = LocalContext.current
+                            val image: Any? = item.imageUri ?: item.imageUrl ?: item.imageRes ?: item.catalogAssetName?.let {
+                                context.resources.getIdentifier(it, "drawable", context.packageName).takeIf { id -> id != 0 }
+                            }
                             if (image != null) AsyncImage(image, item.name, Modifier.size(44.dp).clip(RoundedCornerShape(8.dp)), contentScale = ContentScale.Crop)
                             Column(Modifier.weight(1f).padding(start = 8.dp)) {
                                 Text(item.name, color = TextPrimary, fontWeight = FontWeight.Bold)
@@ -1311,7 +1600,7 @@ private fun PlanOutfitDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = { onSave(title, occasion, items.filter { it.id in selected }, reminder, reminderMinutes) }, enabled = title.isNotBlank() && occasion.isNotBlank() && selected.isNotEmpty()) { Text("Save plan") }
+            TextButton(onClick = { onSave(title, occasion, items.filter { it.id in selected }, reminder, reminderMinutes, activityTimeMinutes) }, enabled = title.isNotBlank() && occasion.isNotBlank() && selected.isNotEmpty()) { Text("Save plan") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
