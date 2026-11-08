@@ -5,8 +5,11 @@ import androidx.lifecycle.viewModelScope
 import com.example.domain.model.ClothingItem
 import com.example.domain.model.ShoppingChatMessage
 import com.example.domain.model.ShoppingItem
+import com.example.domain.model.ShoppingAnalysis
+import com.example.domain.model.ShoppingBudget
 import com.example.domain.model.UserProfile
 import com.example.domain.model.WeatherForecast
+import com.example.domain.repository.OutfitFeedbackRepository
 import com.example.domain.repository.ShoppingRepository
 import com.example.domain.usecase.GetWeatherUseCase
 import com.example.domain.usecase.ManageWardrobeUseCase
@@ -17,13 +20,14 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 data class ShoppingUiState(
     val messages: List<ShoppingChatMessage> = listOf(
         ShoppingChatMessage(
-            text = "Hello! I'm your WearWise AI Fashion Assistant. Ask me anything about outfit styling, color combinations, wardrobe gaps, or what to wear for any occasion or weather!",
+            text = "Hello! I can give local styling and wardrobe-gap suggestions from your saved closet, profile, weather, budget, and outfit feedback. No live store catalog or purchase links are connected.",
             isUser = false
         )
     ),
@@ -31,23 +35,32 @@ data class ShoppingUiState(
     val errorMessage: String? = null,
     val selectedOccasion: String = "Everyday",
     val focusCategory: String? = null,
-    val budget: Double = 150.0,
+    val budget: Double = 0.0,
     val currency: String = "USD",
     val wardrobeCount: Int = 0,
     val profileName: String = "",
     val weatherDescription: String? = null,
-    val lastFailedMessage: String? = null
+    val lastFailedMessage: String? = null,
+    val analysis: ShoppingAnalysis? = null,
+    val syncMessage: String? = null,
+    val isSavingBudget: Boolean = false
 )
 
 class ShoppingViewModel(
     private val shoppingRepository: ShoppingRepository? = null,
     private val manageWardrobeUseCase: ManageWardrobeUseCase? = null,
     private val userProfileUseCase: UserProfileUseCase? = null,
-    private val getWeatherUseCase: GetWeatherUseCase? = null
+    private val getWeatherUseCase: GetWeatherUseCase? = null,
+    private val feedbackRepository: OutfitFeedbackRepository? = null
 ) : ViewModel() {
 
     val shoppingItems: StateFlow<List<ShoppingItem>> = shoppingRepository
         ?.observeShoppingItems()
+        ?.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+        ?: MutableStateFlow(emptyList())
+
+    val purchaseHistory: StateFlow<List<ShoppingItem>> = shoppingRepository
+        ?.observePurchaseHistory()
         ?.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
         ?: MutableStateFlow(emptyList())
 
@@ -59,8 +72,24 @@ class ShoppingViewModel(
     private val _weatherForecast = MutableStateFlow<WeatherForecast?>(null)
 
     init {
+        shoppingRepository?.let { repository ->
+            viewModelScope.launch {
+                repository.observeBudget().collect { budget ->
+                    _uiState.value = _uiState.value.copy(budget = budget.amount, currency = budget.currency)
+                    refreshRecommendations()
+                }
+            }
+            viewModelScope.launch {
+                repository.syncMessage.collect { message ->
+                    _uiState.value = _uiState.value.copy(syncMessage = message)
+                }
+            }
+        }
         loadWardrobeAndProfile()
         loadWeather()
+        feedbackRepository?.let { repository ->
+            viewModelScope.launch { repository.observeFeedback().collect { refreshRecommendations() } }
+        }
     }
 
     private fun loadWardrobeAndProfile() {
@@ -78,9 +107,10 @@ class ShoppingViewModel(
                         profileName = name
                     )
                 }.catch {
-                    // Ignore flow errors
+                    emit(_uiState.value)
                 }.collect { newState ->
                     _uiState.value = newState
+                    refreshRecommendations()
                 }
             }
         }
@@ -93,9 +123,12 @@ class ShoppingViewModel(
                     .getOrNull()?.let { forecast ->
                         _weatherForecast.value = forecast
                         val desc = forecast.temperatureC?.let { temp ->
-                            "⛅ ${temp.toInt()}°C"
+                            val condition = forecast.weatherCode?.let(com.example.domain.model.WeatherDescriptions::describe)
+                            val rain = forecast.precipitationProbability?.let { " · rain $it%" }.orEmpty()
+                            "⛅ ${temp.toInt()}°C${condition?.let { " · $it" }.orEmpty()}$rain"
                         }
                         _uiState.value = _uiState.value.copy(weatherDescription = desc)
+                        refreshRecommendations()
                     }
             }
         }
@@ -103,6 +136,7 @@ class ShoppingViewModel(
 
     fun selectOccasion(occasion: String) {
         _uiState.value = _uiState.value.copy(selectedOccasion = occasion)
+        refreshRecommendations()
     }
 
     fun selectQuickPrompt(promptText: String) {
@@ -170,7 +204,7 @@ class ShoppingViewModel(
         _uiState.value = _uiState.value.copy(
             messages = listOf(
                 ShoppingChatMessage(
-                    text = "Chat history cleared. How can I assist you with your wardrobe or outfit choices now?",
+                    text = "Chat history cleared. Ask for local styling or wardrobe-gap suggestions from your saved data.",
                     isUser = false
                 )
             ),
@@ -186,6 +220,56 @@ class ShoppingViewModel(
     fun addItem(item: ShoppingItem) {
         shoppingRepository?.let { repository ->
             viewModelScope.launch { repository.addItem(item) }
+        }
+    }
+
+    fun setFavorite(id: Long, favorite: Boolean) {
+        shoppingRepository?.let { repository ->
+            viewModelScope.launch { repository.setFavorite(id, favorite) }
+        }
+    }
+
+    fun markPurchased(item: ShoppingItem, actualPrice: Double) {
+        updateItem(
+            item.copy(
+                status = "PURCHASED",
+                actualPrice = actualPrice.coerceAtLeast(0.0),
+                purchasedAt = item.purchasedAt ?: System.currentTimeMillis()
+            )
+        )
+    }
+
+    fun markNeeded(item: ShoppingItem) {
+        updateItem(item.copy(status = "NEEDED", purchasedAt = null, actualPrice = null))
+    }
+
+    fun saveBudget(amount: Double, currency: String = _uiState.value.currency) {
+        val repository = shoppingRepository ?: return
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isSavingBudget = true)
+            runCatching { repository.updateBudget(ShoppingBudget(amount = amount, currency = currency)) }
+            _uiState.value = _uiState.value.copy(isSavingBudget = false)
+        }
+    }
+
+    fun refreshRecommendations() {
+        val repository = shoppingRepository ?: return
+        viewModelScope.launch {
+            val state = _uiState.value
+            val feedback = runCatching { feedbackRepository?.preferenceSummary().orEmpty() }.getOrDefault(emptyMap())
+            val analysis = runCatching {
+                repository.analyzeWardrobe(
+                    wardrobe = _wardrobeItems.value,
+                    profile = _userProfile.value,
+                    budget = state.budget,
+                    currency = state.currency,
+                    occasion = state.selectedOccasion,
+                    weather = state.weatherDescription ?: _weatherForecast.value?.temperatureC?.let { "${it.toInt()}°C" },
+                    focusCategory = state.focusCategory,
+                    feedback = feedback
+                )
+            }.getOrNull()
+            _uiState.value = _uiState.value.copy(analysis = analysis)
         }
     }
 

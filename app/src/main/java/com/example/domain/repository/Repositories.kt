@@ -13,6 +13,7 @@ import com.example.domain.model.ShoppingAnalysis
 import com.example.domain.model.ShoppingChatMessage
 import com.example.domain.model.ShoppingItem
 import com.example.domain.model.ShoppingRecommendation
+import com.example.domain.model.ShoppingBudget
 import com.example.domain.model.Trip
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.Flow
@@ -149,7 +150,11 @@ interface TryOnRepository {
 }
 
 interface ShoppingRepository {
+    val syncMessage: StateFlow<String?>
     fun observeShoppingItems(): Flow<List<ShoppingItem>>
+    fun observePurchaseHistory(): Flow<List<ShoppingItem>>
+    fun observeBudget(): Flow<ShoppingBudget>
+    suspend fun updateBudget(budget: ShoppingBudget)
     suspend fun analyzeWardrobe(
         wardrobe: List<ClothingItem>,
         profile: UserProfile?,
@@ -157,7 +162,8 @@ interface ShoppingRepository {
         currency: String,
         occasion: String,
         weather: String?,
-        focusCategory: String?
+        focusCategory: String?,
+        feedback: Map<String, List<Pair<String, Int>>> = emptyMap()
     ): ShoppingAnalysis
     suspend fun chat(
         question: String,
@@ -173,6 +179,7 @@ interface ShoppingRepository {
     suspend fun addItem(item: ShoppingItem): Long
     suspend fun updateItem(item: ShoppingItem)
     suspend fun deleteItem(id: Long)
+    suspend fun setFavorite(id: Long, favorite: Boolean)
 }
 
 interface TripRepository {
