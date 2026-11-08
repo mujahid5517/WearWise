@@ -13,6 +13,7 @@ import com.example.data.local.entity.UserProfileEntity
 import com.example.data.local.entity.WeeklyScheduleEntity
 import com.example.data.local.entity.WearHistoryEntity
 import com.example.data.local.entity.ShoppingItemEntity
+import com.example.data.local.entity.ShoppingBudgetEntity
 import com.example.data.local.entity.TripEntity
 import com.example.data.local.entity.OutfitFeedbackEntity
 import com.example.data.local.entity.SyncQueueEntity
@@ -185,8 +186,11 @@ interface WearHistoryDao {
 
 @Dao
 interface ShoppingItemDao {
-    @Query("SELECT * FROM shopping_items ORDER BY createdAt DESC")
+    @Query("SELECT * FROM shopping_items WHERE isDeleted = 0 ORDER BY createdAt DESC")
     fun observeAll(): Flow<List<ShoppingItemEntity>>
+
+    @Query("SELECT * FROM shopping_items WHERE status = 'PURCHASED' AND purchasedAt IS NOT NULL ORDER BY purchasedAt DESC")
+    fun observePurchaseHistory(): Flow<List<ShoppingItemEntity>>
 
     @Query("SELECT * FROM shopping_items")
     suspend fun snapshot(): List<ShoppingItemEntity>
@@ -197,6 +201,9 @@ interface ShoppingItemDao {
     @Query("SELECT * FROM shopping_items WHERE remoteId = :remoteId LIMIT 1")
     suspend fun getByRemoteId(remoteId: String): ShoppingItemEntity?
 
+    @Query("UPDATE shopping_items SET favorite = :favorite, updatedAt = :updatedAt WHERE id = :id")
+    suspend fun setFavorite(id: Long, favorite: Boolean, updatedAt: Long)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(item: ShoppingItemEntity): Long
 
@@ -205,6 +212,18 @@ interface ShoppingItemDao {
 
     @Query("DELETE FROM shopping_items WHERE id = :id")
     suspend fun delete(id: Long)
+}
+
+@Dao
+interface ShoppingBudgetDao {
+    @Query("SELECT * FROM shopping_budgets WHERE ownerUid = :ownerUid LIMIT 1")
+    fun observe(ownerUid: String): Flow<ShoppingBudgetEntity?>
+
+    @Query("SELECT * FROM shopping_budgets WHERE ownerUid = :ownerUid LIMIT 1")
+    suspend fun get(ownerUid: String): ShoppingBudgetEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(budget: ShoppingBudgetEntity)
 }
 
 @Dao
