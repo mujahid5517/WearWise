@@ -142,35 +142,28 @@ class UserProfileUseCase(
 }
 
 data class WeatherOutfitSuggestion(
-    val conditionSummary: String,
-    val items: List<ClothingItem>,
-    val reason: String
+    val conditionSummary: String = "",
     val items: List<ClothingItem> = emptyList(),
-    val reason: String = "",
-    val conditionSummary: String = ""
+    val reason: String = ""
 )
 
 object WardrobeWeatherRecommender {
     fun recommend(
         conditions: WeatherForecast,
-        conditions: Any?,
         clothes: List<ClothingItem>,
         history: List<com.example.domain.model.WearHistory>,
         variation: Int
     ): WeatherOutfitSuggestion {
-        val items = if (clothes.isNotEmpty()) clothes.shuffled().take(3) else emptyList()
+        val matchedItems = listOfNotNull(
+            clothes.firstOrNull { it.category.equals("Tops", true) },
+            clothes.firstOrNull { it.category.equals("Bottoms", true) },
+            clothes.firstOrNull { it.category.equals("Shoes", true) }
+        )
+        val items = matchedItems.ifEmpty { clothes.shuffled().take(3) }
         return WeatherOutfitSuggestion(
             conditionSummary = "${conditions.temperatureC?.toInt() ?: 20}°C, ${WeatherDescriptions.describe(conditions.weatherCode)}",
             items = items,
-            reason = "Selected from your wardrobe to match current weather conditions."
-        val tops = clothes.filter { it.category.equals("Tops", true) }
-        val bottoms = clothes.filter { it.category.equals("Bottoms", true) }
-        val shoes = clothes.filter { it.category.equals("Shoes", true) }
-        val items = listOfNotNull(tops.firstOrNull(), bottoms.firstOrNull(), shoes.firstOrNull())
-        return WeatherOutfitSuggestion(
-            items = items,
-            reason = "Weather-optimized selection based on current forecast.",
-            conditionSummary = "Partly cloudy"
+            reason = "Weather-optimized selection based on current forecast."
         )
     }
 }

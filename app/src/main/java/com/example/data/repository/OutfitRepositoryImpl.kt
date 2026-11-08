@@ -134,7 +134,9 @@ class OutfitRepositoryImpl(
         if (cloudIds.size < 2) return null
         val positive = feedbackRows.filter { (it.rating ?: 3) >= 4 || it.reaction == "LIKE" }
         val negative = feedbackRows.filter { (it.rating ?: 3) <= 2 || it.reaction == "DISLIKE" }
-        val userProfile = database.userProfileDao().getUserProfile().first()
+        val userProfile = auth.currentUser?.uid?.let {
+            database.userProfileDao().getUserProfile(it).first()
+        }
         val request = mapOf(
             "itemIds" to cloudIds,
             "occasion" to occasion,

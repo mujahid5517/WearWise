@@ -28,21 +28,43 @@ data class AuthenticatedUser(
     val displayName: String?,
     val email: String?,
     val photoUrl: String?,
-    val emailVerified: Boolean
+    val emailVerified: Boolean,
+    val profile: UserProfile? = null
 )
 
 data class AuthenticationState(
     val isReady: Boolean = false,
-    val user: AuthenticatedUser? = null
+    val user: AuthenticatedUser? = null,
+    val profileSyncStatus: ProfileSyncStatus = if (user == null) {
+        ProfileSyncStatus.NOT_REQUIRED
+    } else {
+        ProfileSyncStatus.SYNCED
+    },
+    val profileSyncError: String? = null
+)
+
+enum class ProfileSyncStatus {
+    NOT_REQUIRED,
+    SYNCING,
+    SYNCED,
+    FAILED
+}
+
+class ProfileSyncException(message: String, cause: Throwable) : Exception(message, cause)
+
+data class ProfileUpdateResult(
+    val pendingEmail: String? = null
 )
 
 interface AuthenticationRepository {
     val state: StateFlow<AuthenticationState>
     suspend fun register(fullName: String, email: String, password: String): AuthenticatedUser
     suspend fun signIn(email: String, password: String): AuthenticatedUser
+    suspend fun syncCurrentUserProfile(): AuthenticatedUser?
+    suspend fun refreshCurrentUser(): AuthenticatedUser?
     suspend fun sendPasswordReset(email: String)
     suspend fun updatePassword(currentPassword: String, newPassword: String)
-    suspend fun updateProfile(profile: UserProfile)
+    suspend fun updateProfile(profile: UserProfile, currentPassword: String? = null): ProfileUpdateResult
     suspend fun updateProfilePhoto(localUri: String): String
     suspend fun deleteAccount(password: String)
     fun signOut()

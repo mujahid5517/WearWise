@@ -46,12 +46,10 @@ import com.example.data.local.entity.OutfitFeedbackEntity
         SyncQueueEntity::class,
         WearHistoryEntity::class,
         ShoppingItemEntity::class,
-        TripEntity::class
-    ],
-    version = 12,
+        TripEntity::class,
         OutfitFeedbackEntity::class
     ],
-    version = 13,
+    version = 18,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -227,11 +225,6 @@ abstract class AppDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE outfits ADD COLUMN colorCompatibilityExplanation TEXT NOT NULL DEFAULT ''")
                 db.execSQL("ALTER TABLE outfits ADD COLUMN occasionSuitability TEXT NOT NULL DEFAULT ''")
-            }
-        }
-
-        private val MIGRATION_12_13 = object : Migration(12, 13) {
-            override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE trips ADD COLUMN destinationLat REAL DEFAULT NULL")
                 db.execSQL("ALTER TABLE trips ADD COLUMN destinationLng REAL DEFAULT NULL")
                 db.execSQL("ALTER TABLE trips ADD COLUMN repackingAlert TEXT NOT NULL DEFAULT ''")
@@ -253,6 +246,91 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_15_16 = object : Migration(15, 16) {
+            override fun migrate(db: SupportSQLiteDatabase) {}
+        }
+
+        private val MIGRATION_16_17 = object : Migration(16, 17) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE user_profiles_new (
+                        id INTEGER NOT NULL,
+                        ownerUid TEXT NOT NULL,
+                        firstName TEXT NOT NULL,
+                        nickname TEXT NOT NULL,
+                        email TEXT NOT NULL,
+                        ageRange TEXT NOT NULL,
+                        gender TEXT NOT NULL,
+                        country TEXT NOT NULL,
+                        region TEXT NOT NULL,
+                        profession TEXT NOT NULL,
+                        dressEnvironment TEXT NOT NULL,
+                        stylePreferences TEXT NOT NULL,
+                        favoriteColors TEXT NOT NULL,
+                        avoidedColors TEXT NOT NULL,
+                        commonOccasions TEXT NOT NULL,
+                        climate TEXT NOT NULL,
+                        silhouetteArchetype TEXT NOT NULL,
+                        profileImage TEXT,
+                        profileImageRes INTEGER,
+                        colorSeason TEXT NOT NULL,
+                        skinUndertone TEXT NOT NULL,
+                        hairColorAnalyzed TEXT NOT NULL,
+                        eyeColorAnalyzed TEXT NOT NULL,
+                        recommendedColors TEXT NOT NULL,
+                        colorsToAvoid TEXT NOT NULL,
+                        colorAnalysisRationale TEXT NOT NULL,
+                        colorAnalysisPhotoPath TEXT,
+                        createdAt INTEGER NOT NULL,
+                        updatedAt INTEGER NOT NULL,
+                        PRIMARY KEY(id, ownerUid)
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    INSERT INTO user_profiles_new (
+                        id, ownerUid, firstName, nickname, email, ageRange, gender,
+                        country, region, profession, dressEnvironment, stylePreferences,
+                        favoriteColors, avoidedColors, commonOccasions, climate,
+                        silhouetteArchetype, profileImage, profileImageRes, colorSeason,
+                        skinUndertone, hairColorAnalyzed, eyeColorAnalyzed,
+                        recommendedColors, colorsToAvoid, colorAnalysisRationale,
+                        colorAnalysisPhotoPath, createdAt, updatedAt
+                    )
+                    SELECT
+                        id, '', firstName, nickname, email, ageRange, gender,
+                        country, region, profession, dressEnvironment, stylePreferences,
+                        favoriteColors, avoidedColors, commonOccasions, climate,
+                        silhouetteArchetype, profileImage, profileImageRes, colorSeason,
+                        skinUndertone, hairColorAnalyzed, eyeColorAnalyzed,
+                        recommendedColors, colorsToAvoid, colorAnalysisRationale,
+                        colorAnalysisPhotoPath, createdAt, updatedAt
+                    FROM user_profiles
+                    """.trimIndent()
+                )
+                db.execSQL("DROP TABLE user_profiles")
+                db.execSQL("ALTER TABLE user_profiles_new RENAME TO user_profiles")
+            }
+        }
+
+        private val MIGRATION_17_18 = object : Migration(17, 18) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("UPDATE user_profiles SET email = '' WHERE email = 'yared@institution.edu'")
+                db.execSQL("UPDATE user_profiles SET country = '' WHERE country = 'United States'")
+                db.execSQL("UPDATE user_profiles SET region = '' WHERE region = 'Cambridge, MA'")
+                db.execSQL("UPDATE user_profiles SET profession = '' WHERE profession = 'Academic & Research'")
+                db.execSQL("UPDATE user_profiles SET dressEnvironment = '' WHERE dressEnvironment = 'University / Research'")
+                db.execSQL("UPDATE user_profiles SET stylePreferences = '' WHERE stylePreferences = 'Smart Casual'")
+                db.execSQL("UPDATE user_profiles SET favoriteColors = '' WHERE favoriteColors = 'Deep Navy,Charcoal'")
+                db.execSQL("UPDATE user_profiles SET avoidedColors = '' WHERE avoidedColors = 'Neon Yellow'")
+                db.execSQL("UPDATE user_profiles SET commonOccasions = '' WHERE commonOccasions = 'Work,Everyday'")
+                db.execSQL("UPDATE user_profiles SET climate = '' WHERE climate = 'Temperate'")
+                db.execSQL("UPDATE user_profiles SET silhouetteArchetype = '' WHERE silhouetteArchetype = 'Athletic Lean'")
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -271,6 +349,11 @@ abstract class AppDatabase : RoomDatabase() {
                     .addMigrations(MIGRATION_10_11)
                     .addMigrations(MIGRATION_11_12)
                     .addMigrations(MIGRATION_12_13)
+                    .addMigrations(MIGRATION_13_14)
+                    .addMigrations(MIGRATION_14_15)
+                    .addMigrations(MIGRATION_15_16)
+                    .addMigrations(MIGRATION_16_17)
+                    .addMigrations(MIGRATION_17_18)
                     .build()
                 INSTANCE = instance
                 instance

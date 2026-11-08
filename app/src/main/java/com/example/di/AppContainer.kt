@@ -41,7 +41,6 @@ import com.example.domain.usecase.WeeklyPlannerUseCase
 import com.example.domain.usecase.GetWeatherUseCase
 import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.FirebaseApp
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.storage.FirebaseStorage
 import com.google.firebase.functions.FirebaseFunctions
@@ -53,25 +52,14 @@ class AppContainer(context: Context) {
     val appContext: Context = context.applicationContext
     val database: AppDatabase = AppDatabase.getInstance(context)
 
-    // Firebase is optional for local use; the app can still launch without google-services.json.
-    val firebaseApp = runCatching {
-        if (FirebaseApp.getApps(appContext).isEmpty()) {
-            FirebaseApp.initializeApp(appContext)
-        } else {
-            FirebaseApp.getInstance()
-        }
-    }.getOrNull()
-    val auth: FirebaseAuth? = runCatching { firebaseApp?.let { FirebaseAuth.getInstance(it) } }.getOrNull()
-    val firestore: FirebaseFirestore? = runCatching { firebaseApp?.let { FirebaseFirestore.getInstance(it) } }.getOrNull()
-    val storage: FirebaseStorage? = runCatching { firebaseApp?.let { FirebaseStorage.getInstance(it) } }.getOrNull()
-    val authenticationRepository = FirebaseAuthenticationRepository(auth, firestore, storage)
     // Firebase Authentication & Cloud Firestore
-    private val firebaseApp = checkNotNull(FirebaseApp.getApps(appContext).firstOrNull()) {
+    val firebaseApp = checkNotNull(FirebaseApp.getApps(appContext).firstOrNull()) {
         "Firebase must be initialized before AppContainer is created. Check app/google-services.json."
     }
     val auth: FirebaseAuth = FirebaseAuth.getInstance(firebaseApp)
-    val firestore: FirebaseFirestore = FirebaseFirestore.getInstance()
-    val authenticationRepository = FirebaseAuthenticationRepository(auth, firestore, FirebaseStorage.getInstance())
+    val firestore: FirebaseFirestore = FirebaseFirestore.getInstance(firebaseApp)
+    val storage: FirebaseStorage = FirebaseStorage.getInstance(firebaseApp)
+    val authenticationRepository = FirebaseAuthenticationRepository(auth, firestore, storage)
     val authentication: AuthenticationRepository = authenticationRepository
 
     // Language & Localization
@@ -93,7 +81,7 @@ class AppContainer(context: Context) {
 
     val apiKeyManager = ApiKeyManager(context)
 
-    val userRepository: UserRepository = UserRepositoryImpl(database)
+    val userRepository: UserRepository = UserRepositoryImpl(database, authentication)
     val wardrobeRepository: WardrobeRepository = WardrobeRepositoryImpl(
         database,
         syncManager,

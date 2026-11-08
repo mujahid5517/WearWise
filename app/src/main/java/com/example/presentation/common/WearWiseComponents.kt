@@ -204,7 +204,7 @@ fun WearWiseBottomBar(
         NavigationItem("closet", languageManager?.getString("nav_closet", currentLang) ?: "Closet", Icons.Default.Checkroom),
         NavigationItem("avatar", languageManager?.getString("nav_avatar", currentLang) ?: "Avatar", Icons.Default.Person),
         NavigationItem("planner", languageManager?.getString("nav_planner", currentLang) ?: "Planner", Icons.Default.CalendarMonth),
-        NavigationItem("shopping", "Shop", Icons.Default.Lightbulb),
+        NavigationItem("shopping", languageManager?.getString("nav_shop", currentLang) ?: "Shop", Icons.Default.Lightbulb),
         NavigationItem("profile", languageManager?.getString("nav_profile", currentLang) ?: "Profile", Icons.Default.Tune)
     )
 
@@ -991,23 +991,10 @@ fun WearWiseEmptyState(
 
 @Composable
 fun OfflineStatusBar(isOnline: Boolean, syncState: Any? = null) {
-fun OfflineStatusBar(
-    isOnline: Boolean,
-    syncState: com.example.data.sync.SyncState
-) {
     if (!isOnline) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Color.Red.copy(alpha = 0.8f))
-                .padding(4.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Text("Offline Mode", color = Color.White, fontSize = 12.sp)
-        }
-    }
-}
-
                 .background(CoutureAmber)
                 .padding(vertical = 4.dp),
             contentAlignment = Alignment.Center

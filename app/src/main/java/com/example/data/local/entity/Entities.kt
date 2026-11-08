@@ -3,9 +3,10 @@ package com.example.data.local.entity
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
-@Entity(tableName = "user_profiles")
+@Entity(tableName = "user_profiles", primaryKeys = ["id", "ownerUid"])
 data class UserProfileEntity(
-    @PrimaryKey val id: Long = 1L,
+    val id: Long = 1L,
+    val ownerUid: String = "",
     val firstName: String,
     val nickname: String,
     val email: String,
@@ -177,6 +178,17 @@ data class TripEntity(
     val packingListJson: String,
     val itineraryJson: String,
     val ownerUid: String = "",
+    val createdAt: Long = System.currentTimeMillis(),
+    val destinationLat: Double? = null,
+    val destinationLng: Double? = null,
+    val repackingAlert: String = "",
+    val originLat: Double? = null,
+    val originLng: Double? = null,
+    val travelDistanceKm: Double? = null,
+    val travelDurationHours: Double? = null,
+    val transportMode: String = "Car"
+)
+
 @Entity(tableName = "outfit_feedback", indices = [androidx.room.Index(value = ["ownerUid", "outfitId"], unique = true)])
 data class OutfitFeedbackEntity(
     @PrimaryKey(autoGenerate = true) val feedbackId: Long = 0L,
@@ -197,13 +209,3 @@ data class OutfitFeedbackEntity(
     val deleted: Boolean = false
 )
 
-@Entity(tableName = "sync_queue")
-data class SyncQueueEntity(
-    @PrimaryKey(autoGenerate = true) val id: Long = 0L,
-    val operation: String,
-    val entityType: String,
-    val entityId: Long,
-    val attemptCount: Int = 0,
-    val lastAttemptAt: Long = 0L,
-    val createdAt: Long = System.currentTimeMillis()
-)
