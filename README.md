@@ -1,18 +1,33 @@
 
+<div align="center">
+
 # 👕 WearWise – AI-Powered Fashion & Virtual Try-On Application
 
-<p align="center">
-  <strong>Your Personal AI Fashion Stylist</strong><br>
-  Discover your style, organize your wardrobe, and get smarter outfit recommendations.
-</p>
+### Your Personal AI Fashion Stylist
 
-<p align="center">
-  ![Android](https://img.shields.io/badge/Platform-Android-green?logo=android)
-  ![Kotlin](https://img.shields.io/badge/Language-Kotlin-purple?logo=kotlin)
-  ![Jetpack Compose](https://img.shields.io/badge/UI-Jetpack%20Compose-blue)
-  ![MVVM](https://img.shields.io/badge/Architecture-MVVM-orange)
-  ![Firebase](https://img.shields.io/badge/Backend-Firebase-yellow?logo=firebase)
-</p>
+Discover your style, organize your wardrobe, and get smarter outfit recommendations.
+
+<br/>
+
+<a href="https://developer.android.com/">
+  <img src="https://img.shields.io/badge/Platform-Android-green?logo=android&logoColor=white" />
+</a>
+<a href="https://kotlinlang.org/">
+  <img src="https://img.shields.io/badge/Language-Kotlin-purple?logo=kotlin&logoColor=white" />
+</a>
+<a href="https://developer.android.com/jetpack/compose">
+  <img src="https://img.shields.io/badge/UI-Jetpack%20Compose-blue?logo=jetpackcompose&logoColor=white" />
+</a>
+<a href="https://developer.android.com/topic/architecture">
+  <img src="https://img.shields.io/badge/Architecture-MVVM-orange" />
+</a>
+<a href="https://firebase.google.com/">
+  <img src="https://img.shields.io/badge/Backend-Firebase-yellow?logo=firebase&logoColor=white" />
+</a>
+
+</div>
+
+---
 
 ---
 
