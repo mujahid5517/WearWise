@@ -105,7 +105,7 @@ class ColorAnalysisViewModel(
             try {
                 val encodedImage = withContext(Dispatchers.IO) {
                     tryOnFileStore.encodeForApi(path)
-                }
+                } ?: throw IllegalStateException("Could not encode the selected photo.")
 
                 val prompt = """
                 Act as an expert image consultant, stylist, and professional color analyst. Analyze the provided face photo for personal color analysis.

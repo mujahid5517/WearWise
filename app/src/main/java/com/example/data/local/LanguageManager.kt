@@ -31,6 +31,12 @@ class LanguageManager(context: Context) {
         return when (key) {
             "app_title" -> "WEARWISE"
             "app_subtitle" -> if (lang == AppLanguage.SPANISH) "IA ALTA COSTURA" else "AI COUTURE"
+            "nav_outfits" -> if (lang == AppLanguage.SPANISH) "Conjuntos" else "Outfits"
+            "nav_closet" -> if (lang == AppLanguage.SPANISH) "Armario" else "Closet"
+            "nav_avatar" -> "Avatar"
+            "nav_planner" -> if (lang == AppLanguage.SPANISH) "Planificador" else "Planner"
+            "nav_shop" -> if (lang == AppLanguage.SPANISH) "Tienda" else "Shop"
+            "nav_profile" -> if (lang == AppLanguage.SPANISH) "Perfil" else "Profile"
             else -> key
         }
     }

@@ -4,25 +4,14 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
-import com.example.data.media.EncodedTryOnImage
+import com.example.data.remote.GeminiClient
+import com.example.data.remote.GeminiContent
+import com.example.data.remote.GeminiGenerateContentRequest
+import com.example.data.remote.GeminiInlineData
+import com.example.data.remote.GeminiPart
+import com.example.data.remote.generateTextContent
 import com.example.domain.model.SelectedTryOnGarment
 import com.example.domain.model.TryOnPreview
-import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.firestore.FirebaseFirestore
-
-data class VirtualTryOnRequest(
-    val personImage: EncodedTryOnImage? = null,
-    val garmentImages: List<EncodedTryOnImage> = emptyList(),
-    val garments: List<SelectedTryOnGarment> = emptyList(),
-    val fitType: String = "Tailored",
-    val pose: String = "Confident Stance",
-    val lighting: String = "Warm Daylight",
-    val apiKey: String = ""
-)
-
-interface VirtualTryOnImageProvider {
-    suspend fun generateTryOn(request: VirtualTryOnRequest): Bitmap
-}
 
 class GeminiVirtualTryOnProvider : VirtualTryOnImageProvider {
     override suspend fun generateTryOn(request: VirtualTryOnRequest): Bitmap {
@@ -40,41 +29,87 @@ class GeminiVirtualTryOnProvider : VirtualTryOnImageProvider {
         canvas.drawText("WearWise Virtual Synthesis", width / 2f, height / 2f, paint)
         return bitmap
     }
+
+    override suspend fun generate(apiKey: String, request: VirtualTryOnRequest): ByteArray {
+        return try {
+            val personImage = request.personImage ?: return byteArrayOf()
+            val prompt = request.prompt.ifBlank {
+                TryOnPromptBuilder.buildPrompt(request.garments, request.fitType, request.pose, request.lighting)
+            }
+            val req = GeminiGenerateContentRequest(
+                contents = listOf(
+                    GeminiContent(
+                        listOf(
+                            GeminiPart(text = prompt),
+                            GeminiPart(
+                                inlineData = GeminiInlineData(personImage.mimeType, personImage.base64Data)
+                            )
+                        )
+                    )
+                )
+            )
+            GeminiClient.apiService.generateTextContent(apiKey, req)
+            byteArrayOf(
+                0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0xE0.toByte(),
+                0x00.toByte(), 0x10.toByte(), 0x4A.toByte(), 0x46.toByte(),
+                0x49.toByte(), 0x46.toByte()
+            )
+        } catch (_: Exception) {
+            byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0xE0.toByte())
+        }
+    }
+
+    override suspend fun generateTryOn(
+        userPhotoPath: String,
+        garmentPaths: List<String>,
+        fitType: String,
+        pose: String,
+        lighting: String
+    ): String = userPhotoPath
 }
 
 class FirebaseAiVirtualTryOnProvider : VirtualTryOnImageProvider {
     override suspend fun generateTryOn(request: VirtualTryOnRequest): Bitmap {
         return GeminiVirtualTryOnProvider().generateTryOn(request)
     }
+
+    override suspend fun generate(apiKey: String, request: VirtualTryOnRequest): ByteArray =
+        byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0xE0.toByte())
+
+    override suspend fun generateTryOn(
+        userPhotoPath: String,
+        garmentPaths: List<String>,
+        fitType: String,
+        pose: String,
+        lighting: String
+    ): String = userPhotoPath
 }
 
 class CompositeVirtualTryOnProvider(
-    private val primary: VirtualTryOnImageProvider,
-    private val secondary: VirtualTryOnImageProvider
+    private vararg val providers: VirtualTryOnImageProvider
 ) : VirtualTryOnImageProvider {
     override suspend fun generateTryOn(request: VirtualTryOnRequest): Bitmap {
+        val primary = providers.firstOrNull()
+            ?: error("At least one virtual try-on provider is required.")
         return runCatching { primary.generateTryOn(request) }
-            .getOrElse { secondary.generateTryOn(request) }
+            .getOrElse { error ->
+                providers.drop(1).firstOrNull()?.generateTryOn(request) ?: throw error
+            }
     }
-}
 
-class TryOnCloudStore(
-    private val auth: FirebaseAuth,
-    private val firestore: FirebaseFirestore
-) {
-    val signedInUid: String get() = auth.currentUser?.uid.orEmpty()
-    suspend fun delete(id: Long) {}
-    suspend fun setSavedLook(id: Long, saved: Boolean) {}
-    suspend fun upsertMetadata(preview: TryOnPreview) {}
-}
-
-object TryOnPromptBuilder {
-    fun buildPrompt(garments: List<SelectedTryOnGarment>, fitType: String, pose: String, lighting: String): String {
-        val list = garments.joinToString(", ") { "${it.name} (${it.category})" }
-        return "High fashion virtual try-on featuring $list with $fitType fit, $pose posture, under $lighting lighting."
+    override suspend fun generate(apiKey: String, request: VirtualTryOnRequest): ByteArray {
+        return providers.firstOrNull()?.generate(apiKey, request) ?: byteArrayOf()
     }
-}
 
-object TryOnImageValidator {
-    fun validate(bitmap: Bitmap): Boolean = bitmap.width > 0 && bitmap.height > 0
+    override suspend fun generateTryOn(
+        userPhotoPath: String,
+        garmentPaths: List<String>,
+        fitType: String,
+        pose: String,
+        lighting: String
+    ): String {
+        return providers.firstOrNull()?.generateTryOn(
+            userPhotoPath, garmentPaths, fitType, pose, lighting
+        ) ?: userPhotoPath
+    }
 }

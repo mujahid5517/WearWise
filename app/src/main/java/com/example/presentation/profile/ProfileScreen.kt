@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.content.Intent
 import android.provider.Settings
+import android.util.Patterns
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -61,6 +62,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -76,11 +78,15 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewModelScope
 import coil.compose.AsyncImage
 import com.example.data.local.ApiKeyManager
@@ -90,6 +96,7 @@ import com.example.data.notification.OutfitReminderScheduler
 import com.example.data.local.AppThemeMode
 import com.example.domain.model.UserProfile
 import com.example.domain.repository.AuthenticationRepository
+import com.example.domain.repository.ProfileSyncException
 import com.example.domain.usecase.UserProfileUseCase
 import com.example.presentation.common.WearWiseButton
 import com.example.presentation.common.WearWiseCard
@@ -107,10 +114,18 @@ import com.example.ui.theme.RoyalElectricViolet
 import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
+import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
+import com.google.firebase.auth.FirebaseAuthRecentLoginRequiredException
+import com.google.firebase.auth.FirebaseAuthUserCollisionException
+import com.google.firebase.auth.FirebaseAuthWeakPasswordException
+import com.google.firebase.FirebaseNetworkException
+import com.google.firebase.firestore.FirebaseFirestoreException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -124,6 +139,7 @@ class ProfileViewModel(
 
     private val _profile = MutableStateFlow<UserProfile?>(null)
     val profile: StateFlow<UserProfile?> = _profile.asStateFlow()
+    val authenticationState = authenticationRepository.state
 
     val customApiKey: StateFlow<String?> = apiKeyManager.customApiKeyFlow
 
@@ -140,6 +156,14 @@ class ProfileViewModel(
     val accountAction: StateFlow<ProfileActionState> = _accountAction.asStateFlow()
 
     init {
+        authenticationRepository.state.value.user?.let { user ->
+            _profile.value = (user.profile ?: UserProfile()).copy(
+                firstName = user.displayName.orEmpty(),
+                nickname = user.displayName.orEmpty(),
+                email = user.email.orEmpty(),
+                profileImage = user.photoUrl ?: user.profile?.profileImage
+            )
+        }
         loadProfile()
     }
 
@@ -154,27 +178,45 @@ class ProfileViewModel(
     fun updateProfilePhoto(uriString: String) {
         viewModelScope.launch {
             _accountAction.value = ProfileActionState(isLoading = true)
-            runCatching { authenticationRepository.updateProfilePhoto(uriString) }
-                .onSuccess { url ->
-                    val uid = authenticationRepository.state.value.user?.uid.orEmpty()
-                    _profile.value = _profile.value?.copy(
+            try {
+                val url = authenticationRepository.updateProfilePhoto(uriString)
+                val user = authenticationRepository.state.value.user
+                    ?: error("Sign in before updating your profile photo.")
+                val updatedProfile = (_profile.value ?: UserProfile()).copy(
                         profileImage = url,
-                        profileImagePath = "users/$uid/profile/avatar.jpg"
+                        profileImagePath = "users/${user.uid}/profile/avatar.jpg",
+                        firstName = user.displayName.orEmpty(),
+                        email = user.email.orEmpty(),
+                        updatedAt = System.currentTimeMillis()
                     )
-                    _accountAction.value = ProfileActionState(message = "Profile photo updated.")
-                }
-                .onFailure { _accountAction.value = ProfileActionState(error = it.localizedMessage ?: "Photo upload failed.") }
+                userProfileUseCase.saveProfile(updatedProfile)
+                _profile.value = updatedProfile
+                _accountAction.value = ProfileActionState(message = "Profile photo updated.")
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                _accountAction.value = ProfileActionState(
+                    error = error.localizedMessage ?: "Photo upload failed."
+                )
+            }
         }
     }
 
     fun updateProfileBitmap(bitmap: Bitmap, context: Context) {
         viewModelScope.launch(Dispatchers.IO) {
-            val file = File(context.cacheDir, "user_profile_avatar_${System.currentTimeMillis()}.jpg")
-            val fos = file.outputStream()
-            bitmap.compress(Bitmap.CompressFormat.JPEG, 90, fos)
-            fos.flush()
-            fos.close()
-            updateProfilePhoto(android.net.Uri.fromFile(file).toString())
+            try {
+                val file = File(context.cacheDir, "user_profile_avatar_${System.currentTimeMillis()}.jpg")
+                file.outputStream().use { output ->
+                    check(bitmap.compress(Bitmap.CompressFormat.JPEG, 90, output)) {
+                        "Could not encode the selected profile photo."
+                    }
+                }
+                updateProfilePhoto(android.net.Uri.fromFile(file).toString())
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                _accountAction.value = ProfileActionState(error = error.localizedMessage ?: "Photo upload failed.")
+            }
         }
     }
 
@@ -222,18 +264,82 @@ class ProfileViewModel(
         }
     }
 
-    fun saveProfile(profile: UserProfile) {
+    fun saveProfile(profile: UserProfile, currentPassword: String, onSuccess: () -> Unit) {
+        val fullName = profile.firstName.trim()
+        val email = profile.email.trim()
+        val currentEmail = authenticationRepository.state.value.user?.email.orEmpty()
+        val emailChanged = !email.equals(currentEmail, ignoreCase = true)
+        if (fullName.isEmpty()) {
+            _accountAction.value = ProfileActionState(error = "Full name cannot be empty.")
+            return
+        }
+        if (!Patterns.EMAIL_ADDRESS.matcher(email).matches()) {
+            _accountAction.value = ProfileActionState(error = "Enter a valid email address.")
+            return
+        }
+        if (emailChanged && currentPassword.isBlank()) {
+            _accountAction.value = ProfileActionState(error = "Enter your current password to change your email.")
+            return
+        }
+
         viewModelScope.launch {
             _accountAction.value = ProfileActionState(isLoading = true)
-            runCatching { authenticationRepository.updateProfile(profile) }
-                .onSuccess { _accountAction.value = ProfileActionState(message = "Profile updated.") }
-                .onFailure { _accountAction.value = ProfileActionState(error = it.localizedMessage ?: "Profile update failed.") }
+            try {
+                val verificationResult = authenticationRepository.updateProfile(
+                    profile.copy(firstName = fullName, nickname = fullName, email = email),
+                    currentPassword
+                )
+                val activeEmail = authenticationRepository.state.value.user?.email ?: email
+                val updatedProfile = profile.copy(
+                    firstName = fullName,
+                    nickname = fullName,
+                    email = activeEmail,
+                    updatedAt = System.currentTimeMillis()
+                )
+                userProfileUseCase.saveProfile(updatedProfile)
+                _profile.value = updatedProfile
+                val message = verificationResult.pendingEmail?.let {
+                    "Profile updated. Verify the link sent to $it to change your email."
+                } ?: "Profile updated."
+                _accountAction.value = ProfileActionState(message = message)
+                onSuccess()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                _accountAction.value = ProfileActionState(error = accountErrorMessage(error))
+            }
         }
     }
 
-    fun changePassword(currentPassword: String, password: String, onSuccess: () -> Unit) {
+    fun refreshAccount() {
+        viewModelScope.launch {
+            try {
+                val previousEmail = authenticationRepository.state.value.user?.email
+                val user = authenticationRepository.refreshCurrentUser() ?: return@launch
+                userProfileUseCase.getProfile().first()?.let { _profile.value = it }
+                if (!user.email.isNullOrBlank() && !user.email.equals(previousEmail, ignoreCase = true)) {
+                    _accountAction.value = ProfileActionState(message = "Email address updated.")
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                _accountAction.value = ProfileActionState(error = accountErrorMessage(error))
+            }
+        }
+    }
+
+    fun changePassword(
+        currentPassword: String,
+        password: String,
+        confirmPassword: String,
+        onSuccess: () -> Unit
+    ) {
         if (currentPassword.isBlank()) {
             _accountAction.value = ProfileActionState(error = "Enter your current password.")
+            return
+        }
+        if (password != confirmPassword) {
+            _accountAction.value = ProfileActionState(error = "Passwords do not match.")
             return
         }
         if (password.length < 8 || password.none(Char::isLetter) || password.none(Char::isDigit)) {
@@ -242,18 +348,54 @@ class ProfileViewModel(
         }
         viewModelScope.launch {
             _accountAction.value = ProfileActionState(isLoading = true)
-            runCatching { authenticationRepository.updatePassword(currentPassword, password) }
-                .onSuccess { _accountAction.value = ProfileActionState(message = "Password changed."); onSuccess() }
-                .onFailure { _accountAction.value = ProfileActionState(error = it.localizedMessage ?: "Password update failed.") }
+            try {
+                authenticationRepository.updatePassword(currentPassword, password)
+                _accountAction.value = ProfileActionState(message = "Password changed.")
+                onSuccess()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                _accountAction.value = ProfileActionState(error = accountErrorMessage(error))
+            }
         }
+    }
+
+    private fun accountErrorMessage(error: Exception): String = when (error) {
+        is ProfileSyncException -> error.message ?: "Profile synchronization failed. Retry profile synchronization."
+        is FirebaseAuthInvalidCredentialsException -> "The current password is incorrect."
+        is FirebaseAuthRecentLoginRequiredException -> "Sign in again before changing your account details."
+        is FirebaseAuthUserCollisionException -> "An account already uses that email address."
+        is FirebaseAuthWeakPasswordException -> "Choose a stronger password."
+        is FirebaseNetworkException -> "Network unavailable. Check your connection and try again."
+        is FirebaseFirestoreException -> when (error.code) {
+            FirebaseFirestoreException.Code.PERMISSION_DENIED ->
+                "Firestore denied profile access. Check the users/{uid} security rule."
+            FirebaseFirestoreException.Code.UNAVAILABLE,
+            FirebaseFirestoreException.Code.DEADLINE_EXCEEDED ->
+                "Firestore is temporarily unavailable. Try again."
+            else -> "Profile synchronization failed (${error.code}). Try again."
+        }
+        else -> error.localizedMessage ?: "Account update failed."
     }
 
     fun deleteAccount(password: String, onSuccess: () -> Unit) {
         viewModelScope.launch {
+            val uid = authenticationRepository.state.value.user?.uid
+            if (uid.isNullOrBlank()) {
+                _accountAction.value = ProfileActionState(error = "Sign in before deleting your account.")
+                return@launch
+            }
             _accountAction.value = ProfileActionState(isLoading = true)
-            runCatching { authenticationRepository.deleteAccount(password) }
-                .onSuccess { _accountAction.value = ProfileActionState(); onSuccess() }
-                .onFailure { _accountAction.value = ProfileActionState(error = it.localizedMessage ?: "Account deletion failed.") }
+            try {
+                authenticationRepository.deleteAccount(password)
+                database.userProfileDao().deleteProfile(uid)
+                _accountAction.value = ProfileActionState()
+                onSuccess()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                _accountAction.value = ProfileActionState(error = accountErrorMessage(error))
+            }
         }
     }
 
@@ -287,13 +429,29 @@ fun ProfileScreen(
 ) {
     val context = LocalContext.current
     val profileState by viewModel.profile.collectAsState()
+    val authState by viewModel.authenticationState.collectAsState()
     val customApiKey by viewModel.customApiKey.collectAsState()
     val isTestingKey by viewModel.isTestingKey.collectAsState()
     val testMessage by viewModel.testMessage.collectAsState()
     val isTestSuccess by viewModel.isTestSuccess.collectAsState()
     val accountAction by viewModel.accountAction.collectAsState()
+    val lifecycleOwner = LocalLifecycleOwner.current
 
-    val profile = profileState ?: UserProfile()
+    DisposableEffect(lifecycleOwner, viewModel) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) viewModel.refreshAccount()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    val authenticatedUser = authState.user
+    val profile = profileState ?: (authenticatedUser?.profile ?: UserProfile()).copy(
+        firstName = authenticatedUser?.displayName.orEmpty(),
+        nickname = authenticatedUser?.displayName.orEmpty(),
+        email = authenticatedUser?.email.orEmpty(),
+        profileImage = authenticatedUser?.photoUrl ?: authenticatedUser?.profile?.profileImage
+    )
 
     var showApiKeyDialog by remember { mutableStateOf(false) }
     var showEditProfileDialog by remember { mutableStateOf(false) }
@@ -309,7 +467,6 @@ fun ProfileScreen(
         onResult = { uri ->
             if (uri != null) {
                 viewModel.updateProfilePhoto(uri.toString())
-                Toast.makeText(context, "Try-On Avatar photo updated!", Toast.LENGTH_SHORT).show()
             }
         }
     )
@@ -319,7 +476,6 @@ fun ProfileScreen(
         onResult = { bitmap ->
             if (bitmap != null) {
                 viewModel.updateProfileBitmap(bitmap, context)
-                Toast.makeText(context, "Try-On Avatar captured & saved!", Toast.LENGTH_SHORT).show()
             }
         }
     )
@@ -392,7 +548,10 @@ fun ProfileScreen(
                             fontSize = 10.sp, color = CoutureAmber, maxLines = 1
                         )
                     }
-                    TextButton(onClick = { showEditProfileDialog = true }) {
+                    TextButton(onClick = {
+                        viewModel.clearAccountMessage()
+                        showEditProfileDialog = true
+                    }) {
                         Icon(Icons.Default.Edit, contentDescription = null, tint = RoyalElectricViolet, modifier = Modifier.size(15.dp))
                         Spacer(Modifier.width(3.dp))
                         Text("Edit", color = RoyalElectricViolet, fontSize = 11.sp)
@@ -564,7 +723,10 @@ fun ProfileScreen(
                             viewModel.setOutfitNotificationsEnabled(enabled)
                         })
                     }
-                    ProfileActionRow(Icons.Default.LockReset, "Change Password") { showPasswordDialog = true }
+                    ProfileActionRow(Icons.Default.LockReset, "Change Password") {
+                        viewModel.clearAccountMessage()
+                        showPasswordDialog = true
+                    }
                     ProfileActionRow(Icons.Default.Notifications, "Notification Settings") {
                         context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName))
                     }
@@ -921,32 +1083,51 @@ fun ProfileScreen(
 
     if (showEditProfileDialog) {
         var fullName by remember { mutableStateOf(profile.firstName) }
+        var email by remember { mutableStateOf(profile.email) }
+        var currentPassword by remember { mutableStateOf("") }
         var gender by remember { mutableStateOf(profile.gender) }
         var location by remember { mutableStateOf(profile.region) }
         var styles by remember { mutableStateOf(profile.stylePreferences.joinToString(", ")) }
+        val emailChanged = !email.trim().equals(profile.email.trim(), ignoreCase = true)
         AlertDialog(
-            onDismissRequest = { showEditProfileDialog = false },
+            onDismissRequest = {
+                showEditProfileDialog = false
+                viewModel.clearAccountMessage()
+            },
             title = { Text("Edit Profile", color = TextPrimary, fontWeight = FontWeight.Bold) },
             text = {
                 Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
                     Text("Update only the personal details you choose to share.", color = TextSecondary, fontSize = 12.sp)
                     Spacer(Modifier.height(12.dp))
                     ProfileEditField("Full name", fullName) { fullName = it }
+                    ProfileEditField("Email address", email, KeyboardType.Email) { email = it }
+                    if (emailChanged) {
+                        PasswordEditField("Current password to change email", currentPassword) { currentPassword = it }
+                    }
                     ProfileEditField("Gender (optional)", gender) { gender = it }
                     ProfileEditField("Location (optional)", location) { location = it }
                     ProfileEditField("Preferred styles (comma separated)", styles) { styles = it }
+                    if (accountAction.error != null) {
+                        Text(accountAction.error.orEmpty(), color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                    }
                 }
             },
             confirmButton = {
                 TextButton(enabled = !accountAction.isLoading, onClick = {
                     viewModel.saveProfile(profile.copy(
-                        firstName = fullName.trim(), nickname = fullName.trim(), gender = gender.trim(),
+                        firstName = fullName.trim(), nickname = fullName.trim(), email = email.trim(), gender = gender.trim(),
                         region = location.trim(), stylePreferences = styles.split(',').map(String::trim).filter(String::isNotEmpty)
-                    ))
-                    showEditProfileDialog = false
+                    ), currentPassword) {
+                        showEditProfileDialog = false
+                    }
                 }) { Text(if (accountAction.isLoading) "Saving…" else "Save", color = RoyalElectricViolet) }
             },
-            dismissButton = { TextButton(onClick = { showEditProfileDialog = false }) { Text("Cancel", color = TextSecondary) } },
+            dismissButton = {
+                TextButton(onClick = {
+                    showEditProfileDialog = false
+                    viewModel.clearAccountMessage()
+                }) { Text("Cancel", color = TextSecondary) }
+            },
             containerColor = DarkNavyBg
         )
     }
@@ -970,9 +1151,9 @@ fun ProfileScreen(
             },
             confirmButton = {
                 TextButton(enabled = !accountAction.isLoading, onClick = {
-                    if (newPassword != confirmPassword) {
-                        Toast.makeText(context, "Passwords do not match.", Toast.LENGTH_SHORT).show()
-                    } else viewModel.changePassword(currentPassword, newPassword) { showPasswordDialog = false }
+                    viewModel.changePassword(currentPassword, newPassword, confirmPassword) {
+                        showPasswordDialog = false
+                    }
                 }) { Text(if (accountAction.isLoading) "Updating…" else "Update", color = RoyalElectricViolet) }
             },
             dismissButton = { TextButton(onClick = { showPasswordDialog = false; viewModel.clearAccountMessage() }) { Text("Cancel", color = TextSecondary) } },
@@ -1020,9 +1201,15 @@ private fun ProfileActionRow(icon: androidx.compose.ui.graphics.vector.ImageVect
 }
 
 @Composable
-private fun ProfileEditField(label: String, value: String, onValueChange: (String) -> Unit) {
+private fun ProfileEditField(
+    label: String,
+    value: String,
+    keyboardType: KeyboardType = KeyboardType.Text,
+    onValueChange: (String) -> Unit
+) {
     OutlinedTextField(
         value = value, onValueChange = onValueChange, label = { Text(label) }, singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = keyboardType, imeAction = ImeAction.Next),
         colors = OutlinedTextFieldDefaults.colors(focusedTextColor = TextPrimary, unfocusedTextColor = TextPrimary, focusedBorderColor = RoyalElectricViolet, unfocusedBorderColor = CardBorder),
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
     )

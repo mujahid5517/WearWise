@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.domain.model.ClothingItem
 import com.example.domain.model.ShoppingChatMessage
+import com.example.domain.model.ShoppingItem
 import com.example.domain.model.UserProfile
 import com.example.domain.model.WeatherForecast
 import com.example.domain.repository.ShoppingRepository
@@ -11,10 +12,12 @@ import com.example.domain.usecase.GetWeatherUseCase
 import com.example.domain.usecase.ManageWardrobeUseCase
 import com.example.domain.usecase.UserProfileUseCase
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 data class ShoppingUiState(
@@ -42,6 +45,11 @@ class ShoppingViewModel(
     private val userProfileUseCase: UserProfileUseCase? = null,
     private val getWeatherUseCase: GetWeatherUseCase? = null
 ) : ViewModel() {
+
+    val shoppingItems: StateFlow<List<ShoppingItem>> = shoppingRepository
+        ?.observeShoppingItems()
+        ?.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+        ?: MutableStateFlow(emptyList())
 
     private val _uiState = MutableStateFlow(ShoppingUiState())
     val uiState: StateFlow<ShoppingUiState> = _uiState.asStateFlow()
@@ -173,5 +181,23 @@ class ShoppingViewModel(
 
     fun dismissError() {
         _uiState.value = _uiState.value.copy(errorMessage = null)
+    }
+
+    fun addItem(item: ShoppingItem) {
+        shoppingRepository?.let { repository ->
+            viewModelScope.launch { repository.addItem(item) }
+        }
+    }
+
+    fun updateItem(item: ShoppingItem) {
+        shoppingRepository?.let { repository ->
+            viewModelScope.launch { repository.updateItem(item) }
+        }
+    }
+
+    fun deleteItem(id: Long) {
+        shoppingRepository?.let { repository ->
+            viewModelScope.launch { repository.deleteItem(id) }
+        }
     }
 }

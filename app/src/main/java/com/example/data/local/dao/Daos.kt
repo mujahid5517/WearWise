@@ -20,8 +20,29 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface UserProfileDao {
-    @Query("SELECT * FROM user_profiles WHERE id = :id LIMIT 1")
-    fun getUserProfile(id: Long = 1L): Flow<UserProfileEntity?>
+    @Query("SELECT * FROM user_profiles WHERE ownerUid = :ownerUid AND id = :id LIMIT 1")
+    fun getUserProfile(ownerUid: String, id: Long = 1L): Flow<UserProfileEntity?>
+
+    @Query("SELECT * FROM user_profiles WHERE ownerUid = :ownerUid AND id = :id LIMIT 1")
+    suspend fun getUserProfileOnce(ownerUid: String, id: Long = 1L): UserProfileEntity?
+
+    @Query("SELECT * FROM user_profiles")
+    fun observeProfiles(): Flow<List<UserProfileEntity>>
+
+    @Query("""
+        UPDATE user_profiles
+        SET ownerUid = :ownerUid
+        WHERE id = 1
+            AND ownerUid = ''
+            AND NOT EXISTS (
+                SELECT 1 FROM user_profiles
+                WHERE id = 1 AND ownerUid = :ownerUid
+            )
+    """)
+    suspend fun claimLegacyProfile(ownerUid: String)
+
+    @Query("DELETE FROM user_profiles WHERE ownerUid = :ownerUid")
+    suspend fun deleteProfile(ownerUid: String)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOrUpdateProfile(profile: UserProfileEntity)
@@ -199,6 +220,9 @@ interface TripDao {
 
     @Query("DELETE FROM trips WHERE id = :id")
     suspend fun delete(id: Long)
+}
+
+@Dao
 interface OutfitFeedbackDao {
     @Query("SELECT * FROM outfit_feedback WHERE ownerUid = :uid AND deleted = 0 ORDER BY updatedAt DESC")
     fun observe(uid: String): Flow<List<OutfitFeedbackEntity>>
@@ -216,22 +240,4 @@ interface OutfitFeedbackDao {
     suspend fun markDeleted(uid: String, outfitId: Long)
     @Query("DELETE FROM outfit_feedback WHERE feedbackId = :id")
     suspend fun purge(id: Long)
-}
-
-@Dao
-interface SyncQueueDao {
-    @Query("SELECT * FROM sync_queue ORDER BY createdAt ASC")
-    fun getAllPending(): Flow<List<SyncQueueEntity>>
-
-    @Query("SELECT * FROM sync_queue ORDER BY createdAt ASC")
-    suspend fun getPendingQueue(): List<SyncQueueEntity>
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insert(item: SyncQueueEntity): Long
-
-    @Query("DELETE FROM sync_queue WHERE id = :id")
-    suspend fun delete(id: Long)
-
-    @Query("DELETE FROM sync_queue")
-    suspend fun clearAll()
 }

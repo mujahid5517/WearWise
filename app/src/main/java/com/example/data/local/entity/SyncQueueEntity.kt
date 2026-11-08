@@ -11,5 +11,5 @@ data class SyncQueueEntity(
     val entityId: Long,
     val attemptCount: Int = 0,
     val lastAttemptAt: Long = 0L,
-    val createdAt: Long
+    val createdAt: Long = System.currentTimeMillis()
 )

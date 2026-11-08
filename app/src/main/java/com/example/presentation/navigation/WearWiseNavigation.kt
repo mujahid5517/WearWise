@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -20,8 +21,10 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import androidx.lifecycle.ViewModelStore
 import com.example.di.AppContainer
 import com.example.domain.repository.AuthenticatedUser
+import com.example.domain.repository.ProfileSyncStatus
 import com.example.presentation.authentication.FirebaseAccountScreen
 import com.example.presentation.authentication.AuthViewModel
 import com.example.presentation.authentication.WelcomeScreen
@@ -39,6 +42,7 @@ import com.example.presentation.profile.ProfileScreen
 import com.example.presentation.profile.ProfileViewModel
 import com.example.presentation.shopping.AssistantFloatingButton
 import com.example.presentation.shopping.EmptyShopScreen
+import com.example.presentation.shopping.ShoppingWishlistScreen
 import com.example.presentation.shopping.ShoppingScreen
 import com.example.presentation.shopping.ShoppingViewModel
 import com.example.presentation.tryon.TryOnScreen
@@ -94,14 +98,26 @@ fun WearWiseApp(container: AppContainer) {
         }
         return
     }
-    key(authenticationState.user?.uid ?: "signed-out") {
-        WearWiseNavigationGraph(container = container, authenticatedUser = authenticationState.user)
+    key("${authenticationState.user?.uid ?: "signed-out"}:${authenticationState.profileSyncStatus}") {
+        WearWiseNavigationGraph(
+            container = container,
+            authenticatedUser = authenticationState.user,
+            profileSyncStatus = authenticationState.profileSyncStatus
+        )
     }
 }
 
 @Composable
-private fun WearWiseNavigationGraph(container: AppContainer, authenticatedUser: AuthenticatedUser?) {
+private fun WearWiseNavigationGraph(
+    container: AppContainer,
+    authenticatedUser: AuthenticatedUser?,
+    profileSyncStatus: ProfileSyncStatus
+) {
     val navController = rememberNavController()
+    val viewModelStore = remember { ViewModelStore() }
+    DisposableEffect(viewModelStore) {
+        onDispose { viewModelStore.clear() }
+    }
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route ?: Screen.Outfits.route
 
@@ -111,7 +127,9 @@ private fun WearWiseNavigationGraph(container: AppContainer, authenticatedUser: 
     val syncState by container.syncManager.syncState.collectAsState()
     val themeMode by container.themePreferences.themeMode.collectAsState()
     val activeProfile by container.userProfileUseCase.getProfile().collectAsState(initial = null)
-    val authViewModel = remember { AuthViewModel(container.authentication) }
+    val authViewModel = remember(viewModelStore) {
+        AuthViewModel(container.authentication).also { viewModelStore.put("auth", it) }
+    }
 
     val mainDestinations = listOf(
         Screen.Outfits.route,
@@ -125,7 +143,7 @@ private fun WearWiseNavigationGraph(container: AppContainer, authenticatedUser: 
     val showAssistantButton = shouldShowAssistantButton(currentRoute)
 
     // ViewModels with constructor injection via container
-    val homeViewModel = remember {
+    val homeViewModel = remember(viewModelStore) {
         HomeViewModel(
             container.getDailyRecommendationUseCase,
             container.userProfileUseCase,
@@ -134,42 +152,47 @@ private fun WearWiseNavigationGraph(container: AppContainer, authenticatedUser: 
             container.outfitFeedbackRepository,
             container.executeTryOnUseCase,
             container.connectivityMonitor.isOnline
-        )
+        ).also { viewModelStore.put("home", it) }
     }
-    val wardrobeViewModel = remember {
+    val wardrobeViewModel = remember(viewModelStore) {
         WardrobeViewModel(container.manageWardrobeUseCase, container.tryOnFileStore, container.apiKeyManager)
+            .also { viewModelStore.put("wardrobe", it) }
     }
-    val tryOnViewModel = remember {
+    val tryOnViewModel = remember(viewModelStore) {
         TryOnViewModel(
             container.executeTryOnUseCase,
             container.manageWardrobeUseCase,
             container.userProfileUseCase,
             container.outfitRepository
-        )
+        ).also { viewModelStore.put("try-on", it) }
     }
-    val plannerViewModel = remember {
+    val plannerViewModel = remember(viewModelStore) {
         PlannerViewModel(container.weeklyPlannerUseCase, container.manageWardrobeUseCase, container.outfitRepository, container.getWeatherUseCase, container.appContext)
+            .also { viewModelStore.put("planner", it) }
     }
-    val profileViewModel = remember {
+    val profileViewModel = remember(viewModelStore) {
         ProfileViewModel(container.userProfileUseCase, container.apiKeyManager, container.authentication, container.database, container.appContext)
+            .also { viewModelStore.put("profile", it) }
     }
-    val shoppingViewModel = remember {
+    val shoppingViewModel = remember(viewModelStore) {
         ShoppingViewModel(
             container.shoppingRepository,
             container.manageWardrobeUseCase,
             container.userProfileUseCase,
             container.getWeatherUseCase
-        )
+        ).also { viewModelStore.put("shopping", it) }
     }
-    val colorAnalysisViewModel = remember {
+    val colorAnalysisViewModel = remember(viewModelStore) {
         ColorAnalysisViewModel(
             container.userProfileUseCase,
             container.apiKeyManager,
             container.tryOnFileStore,
             container.appContext
-        )
+        ).also { viewModelStore.put("color-analysis", it) }
     }
-    val feedbackViewModel = remember { FeedbackViewModel(container.outfitFeedbackRepository) }
+    val feedbackViewModel = remember(viewModelStore) {
+        FeedbackViewModel(container.outfitFeedbackRepository).also { viewModelStore.put("feedback", it) }
+    }
 
     androidx.compose.runtime.CompositionLocalProvider(
         com.example.data.local.LocalAppLanguage provides currentLanguage,
@@ -213,7 +236,13 @@ private fun WearWiseNavigationGraph(container: AppContainer, authenticatedUser: 
 
                 NavHost(
                     navController = navController,
-                    startDestination = if (authenticatedUser != null) Screen.Outfits.route else Screen.Welcome.route,
+                    startDestination = if (
+                        authenticatedUser != null && profileSyncStatus == ProfileSyncStatus.SYNCED
+                    ) {
+                        Screen.Outfits.route
+                    } else {
+                        Screen.SignIn.route
+                    },
                     modifier = Modifier.fillMaxSize()
                 ) {
                 composable(Screen.Welcome.route) {
@@ -229,21 +258,21 @@ private fun WearWiseNavigationGraph(container: AppContainer, authenticatedUser: 
 
                 composable(Screen.CreateAccount.route) {
                     FirebaseAccountScreen(
-                        auth = container.auth,
+                        viewModel = authViewModel,
                         signIn = false,
-                        onSuccess = { navController.navigate(Screen.Outfits.route) { popUpTo(Screen.Welcome.route) { inclusive = true } } },
+                        onSuccess = { navController.navigate(Screen.Outfits.route) { popUpTo(0) { inclusive = true } } },
                         onToggleMode = { navController.navigate(Screen.SignIn.route) },
-                        onBack = { navController.popBackStack() }
+                        onBack = { navController.navigate(Screen.Welcome.route) }
                     )
                 }
 
                 composable(Screen.SignIn.route) {
                     FirebaseAccountScreen(
-                        auth = container.auth,
+                        viewModel = authViewModel,
                         signIn = true,
-                        onSuccess = { navController.navigate(Screen.Outfits.route) { popUpTo(Screen.Welcome.route) { inclusive = true } } },
+                        onSuccess = { navController.navigate(Screen.Outfits.route) { popUpTo(0) { inclusive = true } } },
                         onToggleMode = { navController.navigate(Screen.CreateAccount.route) },
-                        onBack = { navController.popBackStack() }
+                        onBack = { navController.navigate(Screen.Welcome.route) }
                     )
                 }
 
@@ -310,14 +339,17 @@ private fun WearWiseNavigationGraph(container: AppContainer, authenticatedUser: 
                         onNavigateToTrips = { navController.navigate(Screen.Trips.route) },
                         onSignOut = {
                             container.authentication.signOut()
-                            navController.navigate(Screen.Welcome.route) {
+                            navController.navigate(Screen.SignIn.route) {
                                 popUpTo(0) { inclusive = true }
                             }
                         }
                     )
                 }
                 composable(Screen.Shopping.route) {
-                    EmptyShopScreen()
+                    ShoppingWishlistScreen(
+                        viewModel = shoppingViewModel,
+                        onNavigateToProfile = { navController.navigate(Screen.Profile.route) }
+                    )
                 }
                 composable(Screen.AssistantChat.route) {
                     ShoppingScreen(
@@ -335,7 +367,9 @@ private fun WearWiseNavigationGraph(container: AppContainer, authenticatedUser: 
                 }
                 composable(Screen.Trips.route) {
                     TripsScreen(
-                        viewModel = remember { TripsViewModel(container.tripRepository) },
+                        viewModel = remember(viewModelStore) {
+                            TripsViewModel(container.tripRepository).also { viewModelStore.put("trips", it) }
+                        },
                         onNavigateToCreateTrip = { navController.navigate(Screen.CreateTrip.route) },
                         onNavigateToTripDetail = { tripId -> navController.navigate(Screen.TripDetail.createRoute(tripId)) },
                         onNavigateToProfile = { navController.navigate(Screen.Profile.route) },
@@ -344,13 +378,13 @@ private fun WearWiseNavigationGraph(container: AppContainer, authenticatedUser: 
                 }
                 composable(Screen.CreateTrip.route) {
                     CreateTripScreen(
-                        viewModel = remember {
+                        viewModel = remember(viewModelStore) {
                             CreateTripViewModel(
                                 container.tripRepository,
                                 container.wardrobeRepository,
                                 container.userRepository,
                                 container.weatherRepository
-                            )
+                            ).also { viewModelStore.put("create-trip", it) }
                         },
                         onNavigateBack = { navController.popBackStack() },
                         onTripCreated = { tripId ->
@@ -366,11 +400,13 @@ private fun WearWiseNavigationGraph(container: AppContainer, authenticatedUser: 
                 ) { backStackEntry ->
                     val tripId = backStackEntry.arguments?.getLong("tripId") ?: 0L
                     TripDetailScreen(
-                        viewModel = remember(tripId) {
+                        viewModel = remember(viewModelStore, tripId) {
                             TripDetailViewModel(container.tripRepository, tripId)
+                                .also { viewModelStore.put("trip-detail-$tripId", it) }
                         },
                         onNavigateBack = { navController.popBackStack() }
                     )
+                }
                 composable(Screen.Feedback.route) {
                     FeedbackScreen(viewModel = feedbackViewModel, onNavigateToProfile = { navController.navigate(Screen.Profile.route) })
                 }

@@ -736,38 +736,3 @@ fun CreateAccountScreen(
     }
 }
 
-@Composable
-fun FirebaseAccountScreen(
-    viewModel: AuthViewModel? = null,
-    signIn: Boolean = false,
-    onSuccess: () -> Unit = {},
-    onToggleMode: () -> Unit = {},
-    onBack: () -> Unit = {}
-) {
-    if (signIn) {
-        CreateAccountScreen(
-            onContinue = onSuccess,
-            onBack = onBack,
-            onSignIn = onToggleMode
-        )
-    } else {
-        CreateAccountScreen(
-            onContinue = onSuccess,
-            onBack = onBack,
-            onSignIn = onToggleMode
-        )
-    }
-}
-
-    auth: com.google.firebase.auth.FirebaseAuth,
-    signIn: Boolean,
-    onSuccess: () -> Unit,
-    onToggleMode: () -> Unit,
-    onBack: () -> Unit
-) {
-    CreateAccountScreen(
-        onContinue = onSuccess,
-        onBack = onBack,
-        onSignIn = onToggleMode
-    )
-}

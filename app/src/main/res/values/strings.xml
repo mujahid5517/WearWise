@@ -3,7 +3,9 @@
     <string name="tagline">Automated Haute Intelligence</string>
     <string name="nav_outfits">Outfits</string>
     <string name="nav_closet">Closet</string>
+    <string name="nav_avatar">Avatar</string>
     <string name="nav_try_on">Avatar</string>
     <string name="nav_planner">Planner</string>
+    <string name="nav_shop">Shop</string>
     <string name="nav_profile">Profile</string>
 </resources>

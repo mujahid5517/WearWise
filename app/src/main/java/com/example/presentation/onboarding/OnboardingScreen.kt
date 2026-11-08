@@ -635,7 +635,7 @@ private fun Step2Lifestyle(
                 Spacer(modifier = Modifier.width(10.dp))
                 Column {
                     Text("${selectedRoles.size} roles selected", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                    Text("Academic & Research blend detected", fontSize = 11.sp, color = TextSecondary)
+                    Text("Your style profile is ready to personalize", fontSize = 11.sp, color = TextSecondary)
                 }
             }
         }
