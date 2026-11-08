@@ -8,6 +8,7 @@ import com.example.data.local.entity.UserProfileEntity
 import com.example.data.local.entity.WeeklyScheduleEntity
 import com.example.data.local.entity.WearHistoryEntity
 import com.example.data.local.entity.ShoppingItemEntity
+import com.example.data.local.entity.ShoppingBudgetEntity
 import com.example.domain.model.ClothingItem
 import com.example.domain.model.Outfit
 import com.example.domain.repository.OutfitFeedback
@@ -16,6 +17,7 @@ import com.example.domain.model.UserProfile
 import com.example.domain.model.WeeklyScheduleItem
 import com.example.domain.model.WearHistory
 import com.example.domain.model.ShoppingItem
+import com.example.domain.model.ShoppingBudget
 
 fun ShoppingItemEntity.toDomain() = ShoppingItem(
     id = id,
@@ -30,6 +32,10 @@ fun ShoppingItemEntity.toDomain() = ShoppingItem(
     priority = priority,
     status = status,
     favorite = favorite,
+    quantity = quantity,
+    actualPrice = actualPrice,
+    purchasedAt = purchasedAt,
+    isDeleted = isDeleted,
     createdAt = createdAt,
     updatedAt = updatedAt
 )
@@ -47,7 +53,24 @@ fun ShoppingItem.toEntity() = ShoppingItemEntity(
     priority = priority,
     status = status,
     favorite = favorite,
+    quantity = quantity,
+    actualPrice = actualPrice,
+    purchasedAt = purchasedAt,
+    isDeleted = isDeleted,
     createdAt = createdAt,
+    updatedAt = updatedAt
+)
+
+fun ShoppingBudgetEntity.toDomain() = ShoppingBudget(
+    amount = amount,
+    currency = currency,
+    updatedAt = updatedAt
+)
+
+fun ShoppingBudget.toEntity(ownerUid: String) = ShoppingBudgetEntity(
+    ownerUid = ownerUid,
+    amount = amount,
+    currency = currency,
     updatedAt = updatedAt
 )
 
@@ -287,6 +310,7 @@ fun WeeklyScheduleEntity.toDomain(): WeeklyScheduleItem {
         occasion = occasion,
         reminderEnabled = reminderEnabled,
         reminderTimeMinutes = reminderTimeMinutes,
+        activityTimeMinutes = activityTimeMinutes,
         notes = notes,
         wornAtEpochMillis = wornAtEpochMillis,
         ownerUid = ownerUid
@@ -312,6 +336,7 @@ fun WeeklyScheduleItem.toEntity(): WeeklyScheduleEntity {
         occasion = occasion,
         reminderEnabled = reminderEnabled,
         reminderTimeMinutes = reminderTimeMinutes,
+        activityTimeMinutes = activityTimeMinutes,
         notes = notes,
         wornAtEpochMillis = wornAtEpochMillis,
         ownerUid = ownerUid

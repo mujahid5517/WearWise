@@ -173,6 +173,9 @@ class TryOnRepositoryImpl(
         if (garments.isEmpty()) {
             throw TryOnGenerationException.InvalidImage("Select at least one clothing item.")
         }
+        if (apiKey.isBlank()) {
+            throw TryOnGenerationException.InvalidImage("Add a Gemini API key in Profile before generating a try-on.")
+        }
 
         val personImage = try {
             fileStore.encodeForApi(userPhotoUri)
@@ -180,7 +183,7 @@ class TryOnRepositoryImpl(
             throw wrapImageError(e)
         }
 
-        val clothingImages = garments.mapNotNull { garment ->
+        val clothingImages = garments.map { garment ->
             encodeGarment(garment)
         }
         val garmentsText = garments.joinToString("; ") { "${it.category}: ${it.name}" }
@@ -206,10 +209,14 @@ class TryOnRepositoryImpl(
             throw TryOnGenerationException.NoImageReturned("Gemini returned an invalid image.")
         }
         val baos = java.io.ByteArrayOutputStream()
-        bitmap.compress(Bitmap.CompressFormat.JPEG, 90, baos)
+        check(bitmap.compress(Bitmap.CompressFormat.JPEG, 90, baos)) {
+            "Could not encode Gemini's generated image."
+        }
         val bytes = baos.toByteArray()
+        check(bytes.isNotEmpty()) { "Gemini's generated image was empty." }
 
-        val generatedPath = fileStore.persistGeneratedBytes(bytes).getOrNull() ?: error("Failed to save image")
+        val generatedPath = fileStore.persistGeneratedBytes(bytes)
+            .getOrElse { throw IllegalStateException("Could not save Gemini's generated image.", it) }
         val previewEntity = TryOnPreviewEntity(
             outfitId = outfitId,
             userPhotoPath = userPhotoUri,
@@ -235,33 +242,32 @@ class TryOnRepositoryImpl(
         saved
     }
 
-    private fun encodeGarment(garment: SelectedTryOnGarment): EncodedTryOnImage? {
+    private fun encodeGarment(garment: SelectedTryOnGarment): EncodedTryOnImage {
         val uri = garment.imageUri
         if (!uri.isNullOrBlank()) {
-            return try {
-                fileStore.encodeForApi(uri)
-            } catch (_: Exception) {
-                null
-            }
+            return fileStore.encodeForApi(uri)
+                ?: error("Could not read the selected ${garment.category} image.")
         }
         val remoteUrl = garment.imageUrl
         if (!remoteUrl.isNullOrBlank()) {
-            return try {
-                val bytes = java.net.URL(remoteUrl).openStream().use { it.readBytes() }
-                val file = java.io.File(context.cacheDir, "wardrobe_${System.currentTimeMillis()}.jpg")
-                file.writeBytes(bytes)
-                fileStore.encodeForApi(file.absolutePath)
-            } catch (_: Exception) {
-                null
+            val connection = java.net.URL(remoteUrl).openConnection().apply {
+                connectTimeout = 15_000
+                readTimeout = 30_000
             }
+            val bytes = connection.getInputStream().use { it.readBytes() }
+            val file = java.io.File(context.cacheDir, "wardrobe_${System.currentTimeMillis()}.jpg")
+            file.writeBytes(bytes)
+            return fileStore.encodeForApi(file.absolutePath)
+                ?: error("Could not read the selected ${garment.category} image.")
         }
         val res = garment.imageRes ?: garment.catalogAssetName?.let {
             context.resources.getIdentifier(it, "drawable", context.packageName).takeIf { id -> id != 0 }
         }
         if (res != null) {
             return fileStore.encodeDrawable(context, res)
+                ?: error("Could not load the selected ${garment.category} image.")
         }
-        return null
+        error("The selected ${garment.category} item has no usable image.")
     }
 
     private fun wrapImageError(error: Throwable): TryOnGenerationException {

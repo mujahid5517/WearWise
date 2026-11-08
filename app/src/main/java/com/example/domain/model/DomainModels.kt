@@ -151,8 +151,18 @@ data class ShoppingItem(
     val priority: String = "MEDIUM",
     val status: String = "NEEDED",
     val favorite: Boolean = false,
+    val quantity: Int = 1,
+    val actualPrice: Double? = null,
+    val purchasedAt: Long? = null,
+    val isDeleted: Boolean = false,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
+)
+
+data class ShoppingBudget(
+    val amount: Double = 0.0,
+    val currency: String = "USD",
+    val updatedAt: Long = 0L
 )
 
 data class ShoppingRecommendation(
@@ -205,6 +215,7 @@ data class WeeklyScheduleItem(
     val occasion: String = "Everyday",
     val reminderEnabled: Boolean = false,
     val reminderTimeMinutes: Int = 480,
+    val activityTimeMinutes: Int = 9 * 60,
     val notes: String = "",
     val wornAtEpochMillis: Long? = null,
     val ownerUid: String = ""
@@ -235,6 +246,7 @@ data class DailyWeather(
     val lowC: Double? = null,
     val apparentHighC: Double? = null,
     val precipitationProbability: Int? = null,
+    val precipitationMm: Double? = null,
     val maxWindKmh: Double? = null,
     val weatherCode: Int? = null
 )
@@ -243,7 +255,12 @@ data class HourlyWeather(
     val time: String,
     val weatherCode: Int? = null,
     val temperatureC: Double? = null,
-    val precipitationProbability: Int? = null
+    val feelsLikeC: Double? = null,
+    val precipitationProbability: Int? = null,
+    val precipitationMm: Double? = null,
+    val humidityPercent: Int? = null,
+    val windKmh: Double? = null,
+    val cloudCoverPercent: Int? = null
 )
 
 data class WeatherForecast(
@@ -257,7 +274,10 @@ data class WeatherForecast(
     val humidityPercent: Int? = null,
     val fetchedAtEpochMillis: Long = System.currentTimeMillis(),
     val daily: List<DailyWeather> = emptyList(),
-    val hourly: List<HourlyWeather> = emptyList()
+    val hourly: List<HourlyWeather> = emptyList(),
+    val cloudCoverPercent: Int? = null,
+    val timezone: String = "UTC",
+    val isCached: Boolean = false
 )
 
 data class TripPackingItem(

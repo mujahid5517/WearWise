@@ -11,6 +11,7 @@ import com.example.domain.repository.OutfitRepository
 import com.example.domain.usecase.ExecuteTryOnUseCase
 import com.example.domain.usecase.ManageWardrobeUseCase
 import com.example.domain.usecase.UserProfileUseCase
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -94,7 +95,7 @@ class TryOnViewModel(
 
     fun importGarmentPhoto(uri: String, category: String) {
         viewModelScope.launch {
-            runCatching {
+            try {
                 val path = executeTryOnUseCase.persistGarmentPhoto(uri)
                 val garment = SelectedTryOnGarment(
                     slot = category,
@@ -103,6 +104,10 @@ class TryOnViewModel(
                     imageUri = path
                 )
                 addGarmentInternal(garment)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                _errorMessage.value = error.message ?: "Could not import the selected garment photo."
             }
         }
     }
@@ -176,7 +181,7 @@ class TryOnViewModel(
             _isGenerating.value = true
             _statusMessage.value = "Synthesizing AI virtual try-on..."
             _errorMessage.value = null
-            runCatching {
+            try {
                 val preview = executeTryOnUseCase.execute(
                     outfitId = 0L,
                     fitType = _fitType.value,
@@ -186,11 +191,14 @@ class TryOnViewModel(
                     garments = _garments.value
                 )
                 _currentPreview.value = preview
-            }.onFailure {
-                _errorMessage.value = it.message ?: "Try-on generation failed"
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                _errorMessage.value = error.message ?: "Try-on generation failed"
+            } finally {
+                _isGenerating.value = false
+                _statusMessage.value = null
             }
-            _isGenerating.value = false
-            _statusMessage.value = null
         }
     }
 

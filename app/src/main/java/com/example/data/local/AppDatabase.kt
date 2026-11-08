@@ -14,6 +14,7 @@ import com.example.data.local.dao.UserProfileDao
 import com.example.data.local.dao.WeeklyScheduleDao
 import com.example.data.local.dao.WearHistoryDao
 import com.example.data.local.dao.ShoppingItemDao
+import com.example.data.local.dao.ShoppingBudgetDao
 import com.example.data.local.dao.OutfitFeedbackDao
 import com.example.data.local.entity.ClothingItemEntity
 import com.example.data.local.entity.OutfitEntity
@@ -24,6 +25,7 @@ import com.example.data.local.entity.UserProfileEntity
 import com.example.data.local.entity.WeeklyScheduleEntity
 import com.example.data.local.entity.WearHistoryEntity
 import com.example.data.local.entity.ShoppingItemEntity
+import com.example.data.local.entity.ShoppingBudgetEntity
 import com.example.data.local.entity.TripEntity
 import com.example.data.local.dao.TripDao
 import com.example.data.local.entity.OutfitFeedbackEntity
@@ -34,6 +36,8 @@ import com.example.data.local.entity.OutfitFeedbackEntity
  * Version history:
  *  1 → 2: Added sync_queue table for offline-first sync tracking.
  *  2 → 3: Try-on saved looks and garment summary columns.
+ * 18 → 19: Planner activity time for time-specific weather forecasts.
+ * 19 → 20: Shopping quantity, purchase tracking, soft deletes, and budgets.
  */
 @Database(
     entities = [
@@ -46,10 +50,11 @@ import com.example.data.local.entity.OutfitFeedbackEntity
         SyncQueueEntity::class,
         WearHistoryEntity::class,
         ShoppingItemEntity::class,
+        ShoppingBudgetEntity::class,
         TripEntity::class,
         OutfitFeedbackEntity::class
     ],
-    version = 18,
+    version = 20,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -60,6 +65,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun weeklyScheduleDao(): WeeklyScheduleDao
     abstract fun wearHistoryDao(): WearHistoryDao
     abstract fun shoppingItemDao(): ShoppingItemDao
+    abstract fun shoppingBudgetDao(): ShoppingBudgetDao
     abstract fun syncQueueDao(): SyncQueueDao
     abstract fun tripDao(): TripDao
     abstract fun outfitFeedbackDao(): OutfitFeedbackDao
@@ -331,6 +337,27 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_18_19 = object : Migration(18, 19) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE weekly_schedules ADD COLUMN activityTimeMinutes INTEGER NOT NULL DEFAULT 540")
+            }
+        }
+
+        private val MIGRATION_19_20 = object : Migration(19, 20) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE shopping_items ADD COLUMN quantity INTEGER NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE shopping_items ADD COLUMN actualPrice REAL")
+                db.execSQL("ALTER TABLE shopping_items ADD COLUMN purchasedAt INTEGER")
+                db.execSQL("ALTER TABLE shopping_items ADD COLUMN isDeleted INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("""CREATE TABLE IF NOT EXISTS shopping_budgets (
+                    ownerUid TEXT NOT NULL PRIMARY KEY,
+                    amount REAL NOT NULL DEFAULT 0.0,
+                    currency TEXT NOT NULL DEFAULT 'USD',
+                    updatedAt INTEGER NOT NULL DEFAULT 0
+                )""".trimIndent())
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -354,6 +381,8 @@ abstract class AppDatabase : RoomDatabase() {
                     .addMigrations(MIGRATION_15_16)
                     .addMigrations(MIGRATION_16_17)
                     .addMigrations(MIGRATION_17_18)
+                    .addMigrations(MIGRATION_18_19)
+                    .addMigrations(MIGRATION_19_20)
                     .build()
                 INSTANCE = instance
                 instance

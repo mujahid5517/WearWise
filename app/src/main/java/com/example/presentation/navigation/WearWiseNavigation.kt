@@ -167,7 +167,14 @@ private fun WearWiseNavigationGraph(
         ).also { viewModelStore.put("try-on", it) }
     }
     val plannerViewModel = remember(viewModelStore) {
-        PlannerViewModel(container.weeklyPlannerUseCase, container.manageWardrobeUseCase, container.outfitRepository, container.getWeatherUseCase, container.appContext)
+        PlannerViewModel(
+            container.weeklyPlannerUseCase,
+            container.manageWardrobeUseCase,
+            container.outfitRepository,
+            container.getWeatherUseCase,
+            container.appContext,
+            container.connectivityMonitor.isOnline
+        )
             .also { viewModelStore.put("planner", it) }
     }
     val profileViewModel = remember(viewModelStore) {
@@ -179,7 +186,8 @@ private fun WearWiseNavigationGraph(
             container.shoppingRepository,
             container.manageWardrobeUseCase,
             container.userProfileUseCase,
-            container.getWeatherUseCase
+            container.getWeatherUseCase,
+            container.outfitFeedbackRepository
         ).also { viewModelStore.put("shopping", it) }
     }
     val colorAnalysisViewModel = remember(viewModelStore) {
@@ -289,6 +297,7 @@ private fun WearWiseNavigationGraph(
                 composable(Screen.Outfits.route) {
                     HomeScreen(
                         viewModel = homeViewModel,
+                        plannerViewModel = plannerViewModel,
                         onNavigateToCloset = { navController.navigate(Screen.Closet.route) },
                         onNavigateToAvatar = { navController.navigate(Screen.Avatar.route) },
                         onNavigateToPlanner = { navController.navigate(Screen.Planner.route) },

@@ -90,6 +90,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewModelScope
 import coil.compose.AsyncImage
 import com.example.data.local.ApiKeyManager
+import com.example.data.remote.GeminiClient
 import com.example.data.local.AppDatabase
 import com.example.data.mapper.toDomain
 import com.example.data.notification.OutfitReminderScheduler
@@ -840,9 +841,9 @@ fun ProfileScreen(
 
                     Text(
                         text = if (!customApiKey.isNullOrEmpty()) {
-                            "Custom key active (ends in ...${customApiKey?.takeLast(4)}). Used for live high-res try-on generation."
+                            "Custom key active (ends in ...${customApiKey?.takeLast(4)}). Gemini requests are subject to your project's API limits."
                         } else {
-                            "Connect your personal Gemini API key from Google AI Studio to unlock unlimited photorealistic virtual try-on renders."
+                            "Connect a Gemini API key to enable AI features. Usage and image generation are subject to Google's project quotas."
                         },
                         fontSize = 11.sp,
                         color = TextSecondary,
@@ -975,7 +976,7 @@ fun ProfileScreen(
             text = {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     Text(
-                        text = "Enter your Google Gemini API key to run direct multimodal virtual try-on on your personal photos.",
+                        text = "Enter your Google Gemini API key. It is encrypted on this device; for production, route requests through a backend that stores the credential.",
                         fontSize = 12.sp,
                         color = TextSecondary,
                         lineHeight = 16.sp
@@ -983,7 +984,25 @@ fun ProfileScreen(
 
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        text = "Test Connection generates a small real image to verify image access and uses your Gemini image quota.",
+                        text = "Selected model: ${GeminiClient.IMAGE_MODEL} (image editing). Test Connection checks the model and text endpoint without generating an image.",
+                        fontSize = 11.sp,
+                        color = TextSecondary,
+                        lineHeight = 15.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Key status: ${if (!customApiKey.isNullOrBlank()) "Saved on this device" else "Not saved"}" +
+                            " (${if (inputKey.isNotBlank()) "entered" else "not entered"})" +
+                            "  •  Connection: ${testMessage ?: "Not tested"}",
+                        fontSize = 11.sp,
+                        color = if (isTestSuccess == false) Color(0xFFF43F5E) else TextSecondary,
+                        lineHeight = 15.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Gemini image editing is not a dedicated garment try-on system and may alter clothing details. For more reliable garment transfer, use a dedicated service such as CatVTON.",
                         fontSize = 11.sp,
                         color = TextSecondary,
                         lineHeight = 15.sp

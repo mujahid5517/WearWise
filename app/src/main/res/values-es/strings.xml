@@ -1,0 +1,9 @@
+<resources>
+    <string name="nav_outfits">Conjuntos</string>
+    <string name="nav_closet">Armario</string>
+    <string name="nav_avatar">Avatar</string>
+    <string name="nav_try_on">Avatar</string>
+    <string name="nav_planner">Planificador</string>
+    <string name="nav_shop">Tienda</string>
+    <string name="nav_profile">Perfil</string>
+</resources>

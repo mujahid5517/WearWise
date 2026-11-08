@@ -2,17 +2,8 @@ package com.example.data.local
 
 import android.content.Context
 import android.content.SharedPreferences
-import android.graphics.BitmapFactory
 import com.example.BuildConfig
 import com.example.data.remote.GeminiClient
-import com.example.data.remote.GeminiContent
-import com.example.data.remote.GeminiGenerateContentRequest
-import com.example.data.remote.GeminiPart
-import com.example.data.remote.generateTextContent
-import com.example.data.remote.GeminiErrorEnvelope
-import com.example.data.remote.GeminiGenerationConfig
-import com.example.data.remote.GeminiImageConfig
-import retrofit2.HttpException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -118,77 +109,11 @@ class ApiKeyManager(context: Context) {
             return@withContext Result.failure(IllegalArgumentException("API key cannot be empty"))
         }
         try {
-            val startTime = System.currentTimeMillis()
-            val textRequest = GeminiGenerateContentRequest(
-                contents = listOf(
-                    GeminiContent(parts = listOf(GeminiPart(text = "Respond with 'OK' if connection is active.")))
-                )
-            )
-
-            // Test text generation connection first
-            val response = GeminiClient.apiService.generateTextContent(key, textRequest)
-            val latency = System.currentTimeMillis() - startTime
-            val textReply = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
-            if (!textReply.isNullOrBlank()) {
-                return@withContext Result.success("Connection successful: Gemini AI service connected (${latency} ms).")
-            }
-
-            // Fallback image test if text response was empty
-            val request = GeminiGenerateContentRequest(
-                contents = listOf(
-                    GeminiContent(
-                        parts = listOf(GeminiPart(text = "Generate a simple abstract blue circle on a white background."))
-                    )
-                ),
-                generationConfig = GeminiGenerationConfig(
-                    responseModalities = listOf("IMAGE"),
-                    imageConfig = GeminiImageConfig(aspectRatio = "1:1", imageSize = "512")
-                )
-            )
-            val imgResponse = GeminiClient.apiService.generateContent(GeminiClient.IMAGE_MODEL, key, request)
-            val imagePart = imgResponse.candidates.orEmpty()
-                .asSequence()
-                .flatMap { it.content?.parts.orEmpty().asSequence() }
-                .firstOrNull { !it.inlineData?.data.isNullOrBlank() }
-                ?.inlineData
-            val imageBytes = imagePart?.data?.let { runCatching { Base64.decode(it, Base64.DEFAULT) }.getOrNull() }
-            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            if (imageBytes == null || imageBytes.isEmpty() || imagePart?.mimeType?.startsWith("image/") != true) {
-                Result.failure(IllegalStateException("AI model returned no content. Check API key access and try again."))
-            } else {
-                BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size, bounds)
-                if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
-                    Result.failure(IllegalStateException("AI model returned data that is not decodable."))
-                } else {
-                    Result.success("Connection successful: Gemini AI generated image (${latency} ms).")
-                }
-            }
+            Result.success(GeminiClient.verifyConnection(key))
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            val message = if (e is HttpException) {
-                val detail = runCatching {
-                    e.response()?.errorBody()?.string()?.let {
-                        GeminiClient.moshi.adapter(GeminiErrorEnvelope::class.java).fromJson(it)
-                    }?.error
-                }.getOrNull()
-                val apiMessage = detail?.message.orEmpty().replace(key, "[redacted]").take(200)
-                when (e.code()) {
-                    401 -> "Invalid API key. Check the key and try again."
-                    403 -> if (apiMessage.contains("billing", true) || apiMessage.contains("payment", true)) {
-                        "Billing required: enable billing for the Google project used by this key."
-                    } else "Permission denied for image generation. Check Gemini API and model permissions. $apiMessage"
-                    404 -> "Image-generation model or endpoint unavailable: ${GeminiClient.IMAGE_MODEL}. Check the model ID and API endpoint."
-                    429 -> if (detail?.status.equals("RESOURCE_EXHAUSTED", true) || apiMessage.contains("quota", true)) {
-                        "Image-generation quota reached. Try again after the quota resets. $apiMessage"
-                    } else "Image-generation rate limit reached. Wait briefly and try again."
-                    400 -> "Gemini rejected the image test request. Check the request format. $apiMessage"
-                    in 500..599 -> "Gemini image generation is temporarily unavailable (HTTP ${e.code()})."
-                    else -> "Gemini image-generation check failed (HTTP ${e.code()}). $apiMessage"
-                }
-            } else if (e is java.io.IOException) {
-                "Unable to connect to the AI service. Check your internet connection and try again."
-            } else (e.localizedMessage ?: "Gemini image-generation check failed.").replace(key, "[redacted]")
+            val message = GeminiClient.describeConnectionFailure(e, key, "connection test")
             Result.failure(IllegalStateException(message))
         }
     }
