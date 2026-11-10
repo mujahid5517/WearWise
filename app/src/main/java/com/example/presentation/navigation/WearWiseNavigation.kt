@@ -357,7 +357,12 @@ private fun WearWiseNavigationGraph(
                 composable(Screen.Shopping.route) {
                     ShoppingWishlistScreen(
                         viewModel = shoppingViewModel,
-                        onNavigateToProfile = { navController.navigate(Screen.Profile.route) }
+                        onNavigateToProfile = { navController.navigate(Screen.Profile.route) },
+                        onOpenAssistant = {
+                            navController.navigate(Screen.AssistantChat.route) {
+                                launchSingleTop = true
+                            }
+                        }
                     )
                 }
                 composable(Screen.AssistantChat.route) {

@@ -74,6 +74,9 @@ class ShoppingViewModel(
     init {
         shoppingRepository?.let { repository ->
             viewModelScope.launch {
+                repository.observeShoppingItems().collect { refreshRecommendations() }
+            }
+            viewModelScope.launch {
                 repository.observeBudget().collect { budget ->
                     _uiState.value = _uiState.value.copy(budget = budget.amount, currency = budget.currency)
                     refreshRecommendations()
@@ -256,12 +259,16 @@ class ShoppingViewModel(
         val repository = shoppingRepository ?: return
         viewModelScope.launch {
             val state = _uiState.value
+            val spent = shoppingItems.value
+                .filter { it.status.equals("PURCHASED", true) && it.currency.equals(state.currency, true) }
+                .sumOf { (it.actualPrice ?: it.estimatedPrice).coerceAtLeast(0.0) * it.quantity.coerceAtLeast(1) }
+            val remainingBudget = (state.budget - spent).coerceAtLeast(0.0)
             val feedback = runCatching { feedbackRepository?.preferenceSummary().orEmpty() }.getOrDefault(emptyMap())
             val analysis = runCatching {
                 repository.analyzeWardrobe(
                     wardrobe = _wardrobeItems.value,
                     profile = _userProfile.value,
-                    budget = state.budget,
+                    budget = remainingBudget,
                     currency = state.currency,
                     occasion = state.selectedOccasion,
                     weather = state.weatherDescription ?: _weatherForecast.value?.temperatureC?.let { "${it.toInt()}°C" },
@@ -269,7 +276,19 @@ class ShoppingViewModel(
                     feedback = feedback
                 )
             }.getOrNull()
-            _uiState.value = _uiState.value.copy(analysis = analysis)
+            val savedCategories = shoppingItems.value
+                .filter { it.status.equals("NEEDED", true) || it.status.equals("PURCHASED", true) }
+                .map { it.category.lowercase() }
+            val filteredAnalysis = analysis?.copy(
+                recommendations = analysis.recommendations.filterNot { recommendation ->
+                    savedCategories.any { savedCategory ->
+                        savedCategory == recommendation.category.lowercase() ||
+                            savedCategory.contains(recommendation.category.lowercase()) ||
+                            recommendation.category.lowercase().contains(savedCategory)
+                    }
+                }
+            )
+            _uiState.value = _uiState.value.copy(analysis = filteredAnalysis)
         }
     }
 

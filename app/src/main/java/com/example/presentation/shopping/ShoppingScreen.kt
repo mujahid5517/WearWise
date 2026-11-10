@@ -3,6 +3,7 @@ package com.example.presentation.shopping
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -24,6 +25,10 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.ShoppingBag
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -63,6 +68,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -141,7 +147,7 @@ fun ShoppingScreen(
                 Spacer(modifier = Modifier.width(12.dp))
                 Column {
                     Text(
-                        text = "AI FASHION ASSISTANT",
+                        text = "YOUR STYLE ASSISTANT",
                         fontSize = 16.sp,
                         fontWeight = FontWeight.ExtraBold,
                         letterSpacing = 1.5.sp,
@@ -434,7 +440,7 @@ private fun LoadingBubble() {
                 )
                 Spacer(modifier = Modifier.width(10.dp))
                 Text(
-                    text = "WearWise AI is analyzing your wardrobe...",
+                    text = "Checking your saved wardrobe...",
                     color = TextSecondary,
                     fontSize = 13.sp
                 )
@@ -456,7 +462,8 @@ fun EmptyShopScreen() {
 @Composable
 fun ShoppingWishlistScreen(
     viewModel: ShoppingViewModel,
-    onNavigateToProfile: () -> Unit
+    onNavigateToProfile: () -> Unit,
+    onOpenAssistant: () -> Unit = {}
 ) {
     val items by viewModel.shoppingItems.collectAsState()
     val purchaseHistory by viewModel.purchaseHistory.collectAsState()
@@ -464,33 +471,37 @@ fun ShoppingWishlistScreen(
     var query by remember { mutableStateOf("") }
     var category by remember { mutableStateOf("All") }
     var favoritesOnly by remember { mutableStateOf(false) }
+    var statusFilter by remember { mutableStateOf("All") }
     var sortOrder by remember { mutableStateOf("Newest") }
     var sortMenuExpanded by remember { mutableStateOf(false) }
     var editingItem by remember { mutableStateOf<ShoppingItem?>(null) }
     var purchasingItem by remember { mutableStateOf<ShoppingItem?>(null) }
     var showingEditor by remember { mutableStateOf(false) }
     var showingBudgetEditor by remember { mutableStateOf(false) }
+    var showingPurchaseHistory by remember { mutableStateOf(false) }
 
-    val visibleItems = items
-        .filter { !favoritesOnly || it.favorite }
-        .filter { category == "All" || it.category.equals(category, true) }
-        .filter {
-            query.isBlank() || it.name.contains(query, true) ||
-                it.category.contains(query, true) || it.reason.contains(query, true)
-        }
-        .let { list ->
-            when (sortOrder) {
-                "Name" -> list.sortedBy { it.name.lowercase() }
-                "Price: low to high" -> list.sortedBy { it.estimatedPrice }
-                "Price: high to low" -> list.sortedByDescending { it.estimatedPrice }
-                "Priority" -> list.sortedBy { when (it.priority.uppercase()) { "HIGH" -> 0; "MEDIUM" -> 1; else -> 2 } }
-                else -> list.sortedByDescending { it.createdAt }
-            }
-        }
+    val visibleItems = filterShoppingItems(
+        items = items,
+        query = query,
+        category = category,
+        statusFilter = statusFilter,
+        favoritesOnly = favoritesOnly,
+        sortOrder = sortOrder
+    )
     val purchasedItems = purchaseHistory
     val expenseSummary = summarizePurchases(purchasedItems)
-    val spent = expenseSummary.totalSpent
-    val categoryTotals = expenseSummary.categoryTotals
+    val spent = purchasedItems.filter { it.currency.equals(uiState.currency, true) }
+        .sumOf { (it.actualPrice ?: it.estimatedPrice).coerceAtLeast(0.0) * it.quantity.coerceAtLeast(1) }
+    val categoryTotals = purchasedItems.filter { it.currency.equals(uiState.currency, true) }
+        .groupBy { it.category.ifBlank { "Other" } }
+        .mapValues { (_, rows) ->
+            rows.sumOf { (it.actualPrice ?: it.estimatedPrice).coerceAtLeast(0.0) * it.quantity.coerceAtLeast(1) }
+        }.toSortedMap()
+    val otherCurrencyTotals = purchasedItems.filterNot { it.currency.equals(uiState.currency, true) }
+        .groupBy { it.currency }
+        .mapValues { (_, rows) ->
+            rows.sumOf { (it.actualPrice ?: it.estimatedPrice).coerceAtLeast(0.0) * it.quantity.coerceAtLeast(1) }
+        }
 
     Column(
         modifier = Modifier
@@ -499,68 +510,58 @@ fun ShoppingWishlistScreen(
     ) {
         WearWiseTopBar(
             title = "WEARWISE",
-            subtitle = "SHOPPING WISHLIST",
+            subtitle = "STYLE · SHOP",
             onAvatarClick = onNavigateToProfile
         )
 
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-            contentPadding = PaddingValues(bottom = 24.dp)
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+            contentPadding = PaddingValues(bottom = 28.dp)
         ) {
             item {
+                ShoppingHero(onOpenAssistant = onOpenAssistant)
+            }
+            item {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                    modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Shopping & Wardrobe Expansion", fontSize = 21.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                        Text("Your saved list and custom catalog. No live store catalog is connected.", fontSize = 12.sp, color = TextSecondary)
+                    Column {
+                        Text("Discover Your Style", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                        Text("Your wardrobe-aware shopping space", fontSize = 13.sp, color = TextSecondary)
                     }
-                    Button(onClick = { editingItem = null; showingEditor = true }) { Text("Add item") }
+                    IconButton(onClick = { editingItem = null; showingEditor = true }) {
+                        Icon(Icons.Default.ShoppingBag, contentDescription = "Add shopping item", tint = RoyalElectricViolet)
+                    }
                 }
             }
             item {
-                WearWiseCard(modifier = Modifier.fillMaxWidth()) {
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("Budget & actual spending", fontWeight = FontWeight.Bold, color = TextPrimary)
-                        Text(
-                            if (uiState.budget > 0) "Configured budget: ${money(uiState.currency, uiState.budget)}"
-                            else "Budget not set",
-                            color = TextSecondary,
-                            fontSize = 13.sp
-                        )
-                        Text(
-                            if (uiState.budget > 0) {
-                                "Recorded purchases: ${money(uiState.currency, spent)} · Remaining: ${money(uiState.currency, (uiState.budget - spent).coerceAtLeast(0.0))}"
-                            } else {
-                                "Recorded purchases: ${money(uiState.currency, spent)} · Remaining: — (set a budget)"
-                            },
-                            color = TextSecondary,
-                            fontSize = 13.sp
-                        )
-                        TextButton(onClick = { showingBudgetEditor = true }) { Text("Configure budget") }
-                        if (expenseSummary.purchasedItemCount > 0) {
-                            Text("Purchase history (${expenseSummary.purchasedItemCount} items)", fontWeight = FontWeight.SemiBold, color = TextPrimary)
-                            categoryTotals.forEach { (name, total) ->
-                                Text("$name: ${money(uiState.currency, total)}", color = TextSecondary, fontSize = 12.sp)
-                            }
-                            purchasedItems.forEach { purchase ->
-                                val purchaseDate = purchase.purchasedAt?.let {
-                                    java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date(it))
-                                } ?: "Date not recorded"
-                                Text(
-                                    "${purchase.name} · ${purchase.category} · qty ${purchase.quantity} · $purchaseDate · ${money(purchase.currency, (purchase.actualPrice ?: purchase.estimatedPrice) * purchase.quantity)}",
-                                    color = TextSecondary,
-                                    fontSize = 11.sp
-                                )
-                            }
-                        } else {
-                            Text("Purchase history is empty. Mark a list item purchased to track actual expense.", color = TextSecondary, fontSize = 12.sp)
-                        }
-                    }
-                }
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    placeholder = { Text("Search your saved items") },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                    modifier = Modifier.fillMaxWidth().testTag("shopping_search"),
+                    singleLine = true,
+                    shape = RoundedCornerShape(16.dp)
+                )
+            }
+            item {
+                ShoppingBudgetCard(
+                    currency = uiState.currency,
+                    budget = uiState.budget,
+                    spent = spent,
+                    purchaseCount = expenseSummary.purchasedItemCount,
+                    categoryTotals = categoryTotals,
+                    otherCurrencyTotals = otherCurrencyTotals,
+                    purchases = purchasedItems,
+                    historyExpanded = showingPurchaseHistory,
+                    isSaving = uiState.isSavingBudget,
+                    onConfigureBudget = { showingBudgetEditor = true },
+                    onToggleHistory = { showingPurchaseHistory = !showingPurchaseHistory }
+                )
             }
             uiState.syncMessage?.let { message ->
                 item { Text(message, color = CoutureAmber, fontSize = 12.sp, modifier = Modifier.testTag("shopping_sync_status")) }
@@ -570,12 +571,27 @@ fun ShoppingWishlistScreen(
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
                             Column(modifier = Modifier.weight(1f)) {
-                                Text("Wardrobe gap discovery", fontWeight = FontWeight.Bold, color = TextPrimary)
-                                Text("Suggestions use your saved closet and profile; they are not products.", color = TextSecondary, fontSize = 12.sp)
+                                Text("Recommended for You", fontWeight = FontWeight.Bold, color = TextPrimary)
+                                Text("Wardrobe gap discovery · personalized ideas, not store products.", color = TextSecondary, fontSize = 12.sp)
                             }
                             TextButton(onClick = viewModel::refreshRecommendations) { Text("Refresh") }
                         }
                         val analysis = uiState.analysis
+                        Row(
+                            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(7.dp)
+                        ) {
+                            listOf("Everyday", "Work", "Formal", "Party", "Travel", "Sport").forEach { occasion ->
+                                FilterChip(
+                                    selected = uiState.selectedOccasion == occasion,
+                                    onClick = { viewModel.selectOccasion(occasion) },
+                                    label = { Text(occasion) }
+                                )
+                            }
+                        }
+                        uiState.weatherDescription?.let {
+                            Text("Weather context · $it", color = CoutureAmber, fontSize = 11.sp)
+                        }
                         Text(analysis?.summary ?: "Analyzing your saved wardrobe…", color = TextSecondary, fontSize = 12.sp)
                         analysis?.recommendations.orEmpty().forEach { recommendation ->
                             Row(
@@ -601,7 +617,7 @@ fun ShoppingWishlistScreen(
                                             currency = uiState.currency
                                         )
                                     )
-                                }) { Text("Add gap") }
+                                }) { Text("Add to wishlist") }
                             }
                         }
                         if (analysis?.recommendations.isNullOrEmpty()) {
@@ -611,26 +627,16 @@ fun ShoppingWishlistScreen(
                 }
             }
             item {
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = { query = it },
-                    label = { Text("Search saved items") },
-                    modifier = Modifier.fillMaxWidth().testTag("shopping_search"),
-                    singleLine = true
-                )
-            }
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    val categories = listOf("All") + items.map { it.category }.filter { it.isNotBlank() }.distinct().sorted()
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Categories", color = TextPrimary, fontSize = 17.sp, fontWeight = FontWeight.Bold)
                     Row(
-                        modifier = Modifier.weight(1f).horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        categories.forEach { option ->
+                        val categoryOptions = listOf("All", "Clothing", "Shoes", "Accessories", "Bags", "Watches", "Jewelry", "Other") +
+                            items.map { it.category }.filter { it.isNotBlank() }
+                                .distinct().filterNot { existing -> listOf("All", "Clothing", "Shoes", "Accessories", "Bags", "Watches", "Jewelry", "Other").any { it.equals(existing, true) } }
+                        categoryOptions.distinctBy { it.lowercase() }.forEach { option ->
                             FilterChip(
                                 selected = category.equals(option, true),
                                 onClick = { category = option },
@@ -638,17 +644,34 @@ fun ShoppingWishlistScreen(
                             )
                         }
                     }
-                    TextButton(onClick = { favoritesOnly = !favoritesOnly }) {
-                        Text(if (favoritesOnly) "★ Favorites" else "☆ Favorites")
+                    Row(
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        listOf("All", "Wishlist", "Purchased").forEach { option ->
+                            FilterChip(
+                                selected = statusFilter == option,
+                                onClick = { statusFilter = option },
+                                label = { Text(option) }
+                            )
+                        }
+                        FilterChip(
+                            selected = favoritesOnly,
+                            onClick = { favoritesOnly = !favoritesOnly },
+                            label = { Text(if (favoritesOnly) "♥ Favorites" else "♡ Favorites") }
+                        )
                     }
-                    Box {
-                        TextButton(onClick = { sortMenuExpanded = true }) { Text("Sort: $sortOrder") }
-                        DropdownMenu(expanded = sortMenuExpanded, onDismissRequest = { sortMenuExpanded = false }) {
-                            listOf("Newest", "Name", "Priority", "Price: low to high", "Price: high to low").forEach { option ->
-                                DropdownMenuItem(
-                                    text = { Text(option) },
-                                    onClick = { sortOrder = option; sortMenuExpanded = false }
-                                )
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        Box {
+                            TextButton(onClick = { sortMenuExpanded = true }) { Text("Sort: $sortOrder") }
+                            DropdownMenu(expanded = sortMenuExpanded, onDismissRequest = { sortMenuExpanded = false }) {
+                                listOf("Newest", "Oldest", "Name", "Price: low to high", "Price: high to low").forEach { option ->
+                                    DropdownMenuItem(
+                                        text = { Text(option) },
+                                        onClick = { sortOrder = option; sortMenuExpanded = false }
+                                    )
+                                }
                             }
                         }
                     }
@@ -658,28 +681,41 @@ fun ShoppingWishlistScreen(
                 item {
                     WearWiseCard(modifier = Modifier.fillMaxWidth()) {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("Your shopping list is empty.", color = TextPrimary, fontWeight = FontWeight.Bold)
-                            Text("Add a custom item or add a wardrobe-gap suggestion. Products and purchase links are not fabricated.", color = TextSecondary, fontSize = 13.sp)
+                            Text("Start your wishlist", color = TextPrimary, fontWeight = FontWeight.Bold)
+                            Text("Save custom ideas or add wardrobe-gap suggestions. A live product catalog is not connected.", color = TextSecondary, fontSize = 13.sp)
                             OutlinedButton(onClick = { editingItem = null; showingEditor = true }) { Text("Add custom item") }
                         }
                     }
                 }
             } else if (visibleItems.isEmpty()) {
-                item { Text("No saved items match these filters.", color = TextSecondary, modifier = Modifier.padding(vertical = 18.dp)) }
+                item { Text("No saved items match your search and filters.", color = TextSecondary, modifier = Modifier.padding(vertical = 18.dp)) }
             } else {
-                items(visibleItems, key = { it.id }) { item ->
-                    ShoppingListItemCard(
-                        item = item,
-                        currency = uiState.currency,
-                        onEdit = { editingItem = item; showingEditor = true },
-                        onFavorite = { viewModel.setFavorite(item.id, !item.favorite) },
-                        onPurchase = {
-                            if (item.status.equals("PURCHASED", true)) viewModel.markNeeded(item)
-                            else purchasingItem = item
-                        },
-                        onDelete = { viewModel.deleteItem(item.id) },
-                        onQuantityChange = { newQuantity -> viewModel.updateItem(item.copy(quantity = newQuantity.coerceAtLeast(1))) }
+                item {
+                    Text(
+                        "Your saved list · ${visibleItems.size}",
+                        color = TextPrimary,
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Bold
                     )
+                }
+                items(visibleItems.chunked(2), key = { row -> row.joinToString("-") { it.id.toString() } }) { row ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                        row.forEach { item ->
+                            ShoppingProductCard(
+                                item = item,
+                                modifier = Modifier.weight(1f),
+                                onEdit = { editingItem = item; showingEditor = true },
+                                onFavorite = { viewModel.setFavorite(item.id, !item.favorite) },
+                                onPurchase = {
+                                    if (item.status.equals("PURCHASED", true)) viewModel.markNeeded(item)
+                                    else purchasingItem = item
+                                },
+                                onDelete = { viewModel.deleteItem(item.id) },
+                                onQuantityChange = { newQuantity -> viewModel.updateItem(item.copy(quantity = newQuantity.coerceAtLeast(1))) }
+                            )
+                        }
+                        if (row.size == 1) Spacer(Modifier.weight(1f))
+                    }
                 }
             }
         }
@@ -720,44 +756,241 @@ fun ShoppingWishlistScreen(
     }
 }
 
+internal fun filterShoppingItems(
+    items: List<ShoppingItem>,
+    query: String,
+    category: String,
+    statusFilter: String,
+    favoritesOnly: Boolean,
+    sortOrder: String
+): List<ShoppingItem> = items
+        .filter { !favoritesOnly || it.favorite }
+        .filter { matchesShoppingCategory(category, it.category) }
+        .filter {
+            when (statusFilter) {
+                "Wishlist" -> !it.status.equals("PURCHASED", true)
+                "Purchased" -> it.status.equals("PURCHASED", true)
+                else -> true
+            }
+        }
+        .filter {
+            query.isBlank() || it.name.contains(query, true) ||
+                it.category.contains(query, true) || it.reason.contains(query, true)
+        }
+        .let { list ->
+            when (sortOrder) {
+                "Name" -> list.sortedBy { it.name.lowercase() }
+                "Oldest" -> list.sortedBy { it.createdAt }
+                "Price: low to high" -> list.sortedBy { it.estimatedPrice }
+                "Price: high to low" -> list.sortedByDescending { it.estimatedPrice }
+                else -> list.sortedByDescending { it.createdAt }
+            }
+        }
+private fun matchesShoppingCategory(filter: String, category: String): Boolean {
+    if (filter.equals("All", true)) return true
+    val value = category.lowercase()
+    return when (filter.lowercase()) {
+        "clothing" -> listOf("top", "bottom", "cloth", "dress", "shirt", "outerwear", "knit").any(value::contains)
+        "shoes" -> listOf("shoe", "boot", "sneaker", "sandal", "footwear").any(value::contains)
+        "accessories" -> listOf("accessor", "bag", "watch", "jewel", "belt", "hat").any(value::contains)
+        "bags" -> value.contains("bag")
+        "watches" -> value.contains("watch")
+        "jewelry" -> value.contains("jewel")
+        "other" -> listOf("top", "bottom", "cloth", "dress", "shirt", "outerwear", "knit", "shoe", "boot", "sneaker", "sandal", "footwear", "accessor", "bag", "watch", "jewel", "belt", "hat")
+            .none(value::contains)
+        else -> category.equals(filter, true)
+    }
+}
+
 @Composable
-private fun ShoppingListItemCard(
-    item: ShoppingItem,
+private fun ShoppingHero(onOpenAssistant: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(24.dp))
+            .background(Brush.linearGradient(listOf(Color(0xFF3B236E), Color(0xFF191B34), CardElevated)))
+            .border(1.dp, RoyalElectricViolet.copy(alpha = 0.35f), RoundedCornerShape(24.dp))
+            .padding(20.dp)
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = CoutureAmber, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("YOUR PERSONAL STYLE EDIT", color = CoutureAmber, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.1.sp)
+            }
+            Text("Find Your\nPerfect Style", color = TextPrimary, fontSize = 27.sp, lineHeight = 31.sp, fontWeight = FontWeight.Bold)
+            Text(
+                "Thoughtful wardrobe-gap ideas, grounded in what you already own.",
+                color = TextSecondary,
+                fontSize = 13.sp,
+                lineHeight = 19.sp
+            )
+            Button(
+                onClick = onOpenAssistant,
+                shape = RoundedCornerShape(13.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = RoyalElectricViolet)
+            ) {
+                Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(7.dp))
+                Text("Ask your style assistant")
+            }
+            Text("Saved ideas only · no live store catalog connected", color = TextMuted, fontSize = 10.sp)
+        }
+    }
+}
+
+@Composable
+private fun ShoppingBudgetCard(
     currency: String,
+    budget: Double,
+    spent: Double,
+    purchaseCount: Int,
+    categoryTotals: Map<String, Double>,
+    otherCurrencyTotals: Map<String, Double>,
+    purchases: List<ShoppingItem>,
+    historyExpanded: Boolean,
+    isSaving: Boolean,
+    onConfigureBudget: () -> Unit,
+    onToggleHistory: () -> Unit
+) {
+    WearWiseCard(modifier = Modifier.fillMaxWidth()) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                Column {
+                    Text("Shopping budget", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Text(if (budget > 0) "Your configured limit" else "Set a limit to track progress", color = TextSecondary, fontSize = 12.sp)
+                }
+                TextButton(onClick = onConfigureBudget, enabled = !isSaving) {
+                    Text(if (isSaving) "Saving…" else if (budget > 0) "Edit" else "Set budget")
+                }
+            }
+            Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                BudgetMetric("BUDGET", if (budget > 0) money(currency, budget) else "Not set")
+                BudgetMetric("SPENT", money(currency, spent))
+                BudgetMetric("REMAINING", if (budget > 0) money(currency, (budget - spent).coerceAtLeast(0.0)) else "—")
+            }
+            Box(
+                modifier = Modifier.fillMaxWidth().height(7.dp).clip(CircleShape).background(CardBorder)
+            ) {
+                if (budget > 0) {
+                    Box(
+                        modifier = Modifier.fillMaxWidth((spent / budget).coerceIn(0.0, 1.0).toFloat())
+                            .height(7.dp).clip(CircleShape)
+                            .background(if (spent > budget) CoutureRose else RoyalElectricViolet)
+                    )
+                }
+            }
+            if (budget > 0 && spent > budget) {
+                Text("You are over budget by ${money(currency, spent - budget)}.", color = CoutureRose, fontSize = 11.sp)
+            }
+            categoryTotals.forEach { (name, total) ->
+                Text("$name  ·  ${money(currency, total)}", color = TextSecondary, fontSize = 11.sp)
+            }
+            if (otherCurrencyTotals.isNotEmpty()) {
+                Text(
+                    "Other currencies: " + otherCurrencyTotals.entries.joinToString(" · ") { (code, total) -> money(code, total) },
+                    color = TextMuted,
+                    fontSize = 10.sp
+                )
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                Text("Purchase history · $purchaseCount", color = TextPrimary, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                TextButton(onClick = onToggleHistory, enabled = purchaseCount > 0) {
+                    Text(if (historyExpanded) "Hide" else "View")
+                }
+            }
+            if (historyExpanded && purchases.isNotEmpty()) {
+                purchases.forEach { purchase ->
+                    val date = purchase.purchasedAt?.let {
+                        java.text.SimpleDateFormat("MMM d, yyyy", java.util.Locale.getDefault()).format(java.util.Date(it))
+                    } ?: "Date not recorded"
+                    Text(
+                        "${purchase.name} · qty ${purchase.quantity} · $date · ${money(purchase.currency, (purchase.actualPrice ?: purchase.estimatedPrice) * purchase.quantity)}",
+                        color = TextSecondary,
+                        fontSize = 11.sp
+                    )
+                }
+            } else if (purchaseCount == 0) {
+                Text("Record a purchase from your wishlist to start tracking actual spending.", color = TextMuted, fontSize = 11.sp)
+            }
+        }
+    }
+}
+
+@Composable
+private fun BudgetMetric(label: String, value: String) {
+    Column(modifier = Modifier.padding(end = 4.dp)) {
+        Text(label, color = TextMuted, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.6.sp)
+        Text(value, color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+@Composable
+private fun ShoppingProductCard(
+    item: ShoppingItem,
+    modifier: Modifier = Modifier,
     onEdit: () -> Unit,
     onFavorite: () -> Unit,
     onPurchase: () -> Unit,
     onDelete: () -> Unit,
     onQuantityChange: (Int) -> Unit
 ) {
-    WearWiseCard(modifier = Modifier.fillMaxWidth()) {
-        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(item.name, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                    Text("${item.category} · ${item.priority} priority · ${item.status.lowercase()}", color = TextSecondary, fontSize = 12.sp)
+    WearWiseCard(modifier = modifier.fillMaxWidth()) {
+        Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+            Box(
+                modifier = Modifier.fillMaxWidth().aspectRatio(0.95f)
+                    .clip(RoundedCornerShape(15.dp))
+                    .background(Brush.linearGradient(listOf(RoyalElectricViolet.copy(alpha = 0.28f), CardElevated, CardBorder))),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Checkroom,
+                    contentDescription = if (item.reason.startsWith("Your closet", true)) "Wardrobe gap illustration" else "Saved custom idea illustration",
+                    tint = RoyalElectricViolet.copy(alpha = 0.8f),
+                    modifier = Modifier.size(46.dp)
+                )
+                Text(
+                    if (item.reason.startsWith("Your closet", true)) "WARDROBE GAP" else "SAVED IDEA",
+                    modifier = Modifier.align(Alignment.BottomStart).padding(8.dp)
+                        .clip(RoundedCornerShape(8.dp)).background(DarkNavyBg.copy(alpha = 0.88f))
+                        .padding(horizontal = 7.dp, vertical = 4.dp),
+                    color = TextSecondary,
+                    fontSize = 8.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.5.sp
+                )
+                IconButton(onClick = onFavorite, modifier = Modifier.align(Alignment.TopEnd)) {
+                    Icon(
+                        imageVector = if (item.favorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                        contentDescription = if (item.favorite) "Remove from favorites" else "Add to favorites",
+                        tint = if (item.favorite) CoutureRose else TextPrimary
+                    )
                 }
-                TextButton(onClick = onFavorite) { Text(if (item.favorite) "★ Saved" else "☆ Favorite") }
             }
-            if (item.reason.isNotBlank()) Text(item.reason, color = TextSecondary, fontSize = 12.sp)
+            Text(item.name, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp, maxLines = 2)
+            Text(item.category, color = TextSecondary, fontSize = 11.sp, maxLines = 1)
             Text(
-                if (item.status.equals("PURCHASED", true)) {
-                    "Actual: ${money(currency, item.actualPrice ?: item.estimatedPrice)} each · Subtotal: ${money(currency, (item.actualPrice ?: item.estimatedPrice) * item.quantity)}"
-                } else "Estimate: ${money(item.currency, item.estimatedPrice)} each",
-                color = TextSecondary,
-                fontSize = 12.sp
+                if (item.status.equals("PURCHASED", true)) money(item.currency, item.actualPrice ?: item.estimatedPrice)
+                else if (item.estimatedPrice > 0) money(item.currency, item.estimatedPrice) else "No price set",
+                color = TextPrimary,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold
             )
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    TextButton(onClick = { onQuantityChange(item.quantity - 1) }, enabled = item.quantity > 1) { Text("−") }
-                    Text("Qty ${item.quantity}", color = TextPrimary)
-                    TextButton(onClick = { onQuantityChange(item.quantity + 1) }) { Text("+") }
-                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = onEdit) { Text("Details / Edit") }
-                    TextButton(onClick = onPurchase) { Text(if (item.status.equals("PURCHASED", true)) "Undo" else "Record purchase") }
-                    TextButton(onClick = onDelete) { Text("Delete") }
+                    TextButton(onClick = { onQuantityChange(item.quantity - 1) }, enabled = item.quantity > 1, contentPadding = PaddingValues(horizontal = 4.dp)) { Text("−") }
+                    Text("${item.quantity}", color = TextPrimary, fontSize = 12.sp)
+                    TextButton(onClick = { onQuantityChange(item.quantity + 1) }, contentPadding = PaddingValues(horizontal = 4.dp)) { Text("+") }
                 }
+                IconButton(onClick = onDelete, modifier = Modifier.size(34.dp)) {
+                    Icon(Icons.Default.Delete, contentDescription = "Remove saved item", tint = TextMuted, modifier = Modifier.size(17.dp))
+                }
+            }
+            TextButton(onClick = onEdit, modifier = Modifier.fillMaxWidth(), contentPadding = PaddingValues(vertical = 2.dp)) {
+                Text("View details", fontSize = 11.sp)
+            }
+            OutlinedButton(onClick = onPurchase, modifier = Modifier.fillMaxWidth(), contentPadding = PaddingValues(vertical = 3.dp)) {
+                Text(if (item.status.equals("PURCHASED", true)) "Undo purchase" else "Record purchase", fontSize = 10.sp, maxLines = 1)
             }
         }
     }

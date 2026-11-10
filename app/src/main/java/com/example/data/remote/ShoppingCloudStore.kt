@@ -54,8 +54,6 @@ class ShoppingCloudStore(
         val uid = auth.currentUser?.uid.orEmpty()
         if (uid.isBlank() || item.ownerUid != uid) return
         val document = firestore.collection("shopping_items").document(uid)
-        val data = document.get().await().data.orEmpty()
-        val items = (data["items"] as? List<Map<String, Any?>>).orEmpty().toMutableList()
         val remoteId = item.remoteId ?: UUID.randomUUID().toString()
         val newRow = mapOf(
             "remoteId" to remoteId,
@@ -75,9 +73,13 @@ class ShoppingCloudStore(
             "createdAt" to item.createdAt,
             "updatedAt" to item.updatedAt
         )
-        items.removeAll { it["remoteId"]?.toString() == remoteId }
-        items.add(newRow)
-        document.set(data + ("items" to items)).await()
+        firestore.runTransaction { transaction ->
+            val data = transaction.get(document).data.orEmpty()
+            val items = (data["items"] as? List<Map<String, Any?>>).orEmpty().toMutableList()
+            items.removeAll { it["remoteId"]?.toString() == remoteId }
+            items.add(newRow)
+            transaction.set(document, data + ("items" to items))
+        }.await()
     }
 
     suspend fun getBudget(): ShoppingBudget? {
@@ -96,13 +98,16 @@ class ShoppingCloudStore(
         val uid = auth.currentUser?.uid.orEmpty()
         if (uid.isBlank()) return
         val document = firestore.collection("shopping_items").document(uid)
-        val data = document.get().await().data.orEmpty()
-        document.set(
-            data + mapOf(
+        firestore.runTransaction { transaction ->
+            val data = transaction.get(document).data.orEmpty()
+            transaction.set(
+                document,
+                data + mapOf(
                 "budgetAmount" to budget.amount.coerceAtLeast(0.0),
                 "budgetCurrency" to budget.currency,
                 "budgetUpdatedAt" to budget.updatedAt
+                )
             )
-        ).await()
+        }.await()
     }
 }
