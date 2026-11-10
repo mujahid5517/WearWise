@@ -16,6 +16,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,7 +26,9 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import java.util.UUID
+import kotlin.math.min
 
 class ShoppingRepositoryImpl(
     private val database: AppDatabase,
@@ -36,6 +39,8 @@ class ShoppingRepositoryImpl(
     private val _syncMessage = MutableStateFlow<String?>(null)
     override val syncMessage: StateFlow<String?> = _syncMessage.asStateFlow()
     @Volatile private var isOnline = true
+    @Volatile private var retryAttempt = 0
+    private var retryJob: Job? = null
 
     init {
         scope.launch {
@@ -111,22 +116,65 @@ class ShoppingRepositoryImpl(
         weather: String?,
         focusCategory: String?
     ): String {
-        val names = wardrobe.map { it.name }.filter { it.isNotBlank() }.take(5)
-        val categories = wardrobe.map { it.category }.filter { it.isNotBlank() }.distinct()
+        val categoryCounts = wardrobe.groupingBy { it.category.ifBlank { "Uncategorized" } }.eachCount()
+        val wardrobeSummary = categoryCounts.entries
+            .sortedByDescending { it.value }
+            .joinToString { "${it.value} ${it.key}" }
+            .ifBlank { "no saved wardrobe items" }
+        val profileStyle = profile?.stylePreferences.orEmpty().filter { it.isNotBlank() }
+        val savedShoppingItems = database.shoppingItemDao().snapshot()
+            .filter { ownedByCurrentAccount(it.ownerUid, cloudStore.signedInUid.value) && !it.isDeleted }
+        val spent = savedShoppingItems
+            .filter { it.status.equals("PURCHASED", true) && it.currency.equals(currency, true) }
+            .sumOf { (it.actualPrice ?: it.estimatedPrice).coerceAtLeast(0.0) * it.quantity.coerceAtLeast(1) }
+        val remainingBudget = (budget - spent).coerceAtLeast(0.0)
+        val analysis = ShoppingRecommendationEngine.analyze(
+            wardrobe = wardrobe,
+            profile = profile,
+            budget = remainingBudget,
+            currency = currency,
+            occasion = occasion,
+            weather = weather,
+            focusCategory = focusCategory,
+            feedback = emptyMap()
+        )
+        val availableRecommendations = analysis.recommendations.filterNot { recommendation ->
+            savedShoppingItems.any { saved ->
+                (saved.status.equals("NEEDED", true) || saved.status.equals("PURCHASED", true)) &&
+                    saved.category.isNotBlank() &&
+                        (saved.category.equals(recommendation.category, true) ||
+                        saved.category.contains(recommendation.category, true) ||
+                        recommendation.category.contains(saved.category, true))
+            }
+        }
         return when {
             wardrobe.isEmpty() ->
-                "I can make local recommendations from your closet, but it is empty right now. Add wardrobe items to get personalized gap suggestions."
+                "I can make local recommendations from your closet, but it is empty right now. Add wardrobe items for personalized gap suggestions. No live store catalog or purchase links are connected."
             question.contains("budget", true) ->
-                if (budget > 0) "Your configured shopping budget is $currency $budget. This is separate from recorded purchases."
-                else "You have not configured a shopping budget yet. Purchases are tracked separately from the budget."
+                if (budget > 0) "Your configured shopping budget is $currency ${"%.2f".format(java.util.Locale.US, budget)}. Recommendations use this as a planning limit, not a product price; recorded purchases are tracked separately."
+                else "You have not configured a shopping budget yet. Set one to get budget-aware wardrobe gap suggestions; purchases are tracked separately."
             question.contains("weather", true) && !weather.isNullOrBlank() ->
-                "Your available weather context is $weather. Your wardrobe categories include ${categories.joinToString(", ")}."
+                "Current weather context is $weather. You have ${wardrobe.size} saved items across $wardrobeSummary. For $occasion, prioritize clothing suited to these conditions."
             question.contains("feedback", true) ->
-                "Recommendations can use your saved outfit feedback. Your current closet categories are ${categories.joinToString(", ")}."
+                "Your closet has ${wardrobe.size} saved items across $wardrobeSummary. Outfit feedback is used by the wardrobe recommendations when available."
+            question.contains("buy", true) || question.contains("next", true) ||
+                question.contains("missing", true) || question.contains("gap", true) ||
+                question.contains("recommend", true) ->
+                if (availableRecommendations.isEmpty()) {
+                    "Your saved wardrobe and shopping list have no unaddressed category gap to recommend for $occasion. I won't invent a product; you can add a specific category to explore."
+                } else {
+                    val suggestion = availableRecommendations.first()
+                    "Based on your $wardrobeSummary, consider filling your ${suggestion.category} wardrobe gap for $occasion. ${suggestion.why} " +
+                        (if (suggestion.budgetTarget > 0) "Planning target: $currency ${"%.2f".format(java.util.Locale.US, suggestion.budgetTarget)}; this is not a product price. " else "") +
+                        "This is a category suggestion, not a verified store product."
+                }
             question.contains("outfit", true) ->
-                "From the ${wardrobe.size} real items in your closet (${names.joinToString(", ")}), use your selected $occasion occasion as a styling filter. I do not have a live product catalog."
+                "You have ${wardrobe.size} saved items across $wardrobeSummary. I can use your selected $occasion occasion" +
+                    (profileStyle.firstOrNull()?.let { " and ${profileStyle.joinToString()} style preferences" } ?: "") +
+                    (weather?.let { ", with weather context $it" } ?: "") +
+                    " to guide outfit choices. No live product catalog is connected."
             else ->
-                "Your closet includes ${categories.joinToString(", ")}. I can suggest category gaps based on your saved wardrobe and profile; I do not provide fabricated products or purchase links."
+                "Your saved closet has ${wardrobe.size} items across $wardrobeSummary. ${analysis.summary} I don't invent products or purchase links."
         }
     }
 
@@ -188,7 +236,7 @@ class ShoppingRepositoryImpl(
             var itemsSynced = true
             cloudStore.getItems().forEach { remote ->
                 val dao = database.shoppingItemDao()
-                val local = dao.getByRemoteId(remote.remoteId.orEmpty())
+                val local = dao.getByRemoteId(remote.remoteId.orEmpty(), uid)
                 if (local == null) {
                     dao.insert(remote.toEntity())
                 } else if (remote.updatedAt >= local.updatedAt) {
@@ -196,7 +244,10 @@ class ShoppingRepositoryImpl(
                 } else if (!syncItem(local.toDomain())) itemsSynced = false
             }
             syncBudget()
-            if (itemsSynced) _syncMessage.value = null
+            if (itemsSynced) {
+                retryAttempt = 0
+                _syncMessage.value = null
+            }
         }
     }
 
@@ -209,7 +260,10 @@ class ShoppingRepositoryImpl(
                 .filter { it.ownerUid == uid }
                 .forEach { if (!syncItem(it.toDomain())) itemsSynced = false }
             syncBudget()
-            if (itemsSynced) _syncMessage.value = null
+            if (itemsSynced) {
+                retryAttempt = 0
+                _syncMessage.value = null
+            }
         }
     }
 
@@ -255,8 +309,24 @@ class ShoppingRepositoryImpl(
         runShoppingSyncSafely(::reportSyncFailure, block)
     }
 
+    @Synchronized
     private fun reportSyncFailure(error: Throwable) {
         _syncMessage.value = shoppingSyncErrorMessage(error)
+        val code = firestoreErrorCode(error)
+        if (code == FirebaseFirestoreException.Code.PERMISSION_DENIED ||
+            code == FirebaseFirestoreException.Code.UNAUTHENTICATED
+        ) return
+
+        if (retryJob?.isActive == true) return
+        val attempt = min(retryAttempt, 5)
+        if (retryAttempt < 5) retryAttempt++
+        retryJob = scope.launch {
+            delay(2_000L * (1L shl attempt))
+            retryJob = null
+            if (isOnline && cloudStore.signedInUid.value.isNotBlank()) {
+                runSyncSafely { syncFromCloud(); syncPending() }
+            }
+        }
     }
 }
 
@@ -274,11 +344,13 @@ internal suspend fun runShoppingSyncSafely(
 }
 
 internal fun shoppingSyncErrorMessage(error: Throwable): String {
-    val firestoreError = generateSequence(error) { it.cause }
-        .filterIsInstance<FirebaseFirestoreException>()
-        .firstOrNull()
-    return shoppingSyncErrorMessage(firestoreError?.code)
+    return shoppingSyncErrorMessage(firestoreErrorCode(error))
 }
+
+private fun firestoreErrorCode(error: Throwable): FirebaseFirestoreException.Code? =
+    generateSequence(error) { it.cause }
+        .filterIsInstance<FirebaseFirestoreException>()
+        .firstOrNull()?.code
 
 internal fun shoppingSyncErrorMessage(code: FirebaseFirestoreException.Code?): String {
     return when (code) {

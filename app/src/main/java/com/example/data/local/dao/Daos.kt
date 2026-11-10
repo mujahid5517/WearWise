@@ -189,7 +189,7 @@ interface ShoppingItemDao {
     @Query("SELECT * FROM shopping_items WHERE isDeleted = 0 ORDER BY createdAt DESC")
     fun observeAll(): Flow<List<ShoppingItemEntity>>
 
-    @Query("SELECT * FROM shopping_items WHERE status = 'PURCHASED' AND purchasedAt IS NOT NULL ORDER BY purchasedAt DESC")
+    @Query("SELECT * FROM shopping_items WHERE isDeleted = 0 AND status = 'PURCHASED' AND purchasedAt IS NOT NULL ORDER BY purchasedAt DESC")
     fun observePurchaseHistory(): Flow<List<ShoppingItemEntity>>
 
     @Query("SELECT * FROM shopping_items")
@@ -198,8 +198,8 @@ interface ShoppingItemDao {
     @Query("SELECT * FROM shopping_items WHERE id = :id LIMIT 1")
     suspend fun getById(id: Long): ShoppingItemEntity?
 
-    @Query("SELECT * FROM shopping_items WHERE remoteId = :remoteId LIMIT 1")
-    suspend fun getByRemoteId(remoteId: String): ShoppingItemEntity?
+    @Query("SELECT * FROM shopping_items WHERE remoteId = :remoteId AND ownerUid = :ownerUid LIMIT 1")
+    suspend fun getByRemoteId(remoteId: String, ownerUid: String): ShoppingItemEntity?
 
     @Query("UPDATE shopping_items SET favorite = :favorite, updatedAt = :updatedAt WHERE id = :id")
     suspend fun setFavorite(id: Long, favorite: Boolean, updatedAt: Long)
